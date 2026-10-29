@@ -1,0 +1,2151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Make jointed cut-out puppets from your own prints and drawings, animate them, and export GIF or MP4.">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,-apple-system,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>Puppet Rig</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout: two-box workbench. Sheet (later: the rigged puppet) on the left, parts list on the right; stacks on narrow screens */
+:root {
+  --bg: #eceef1;
+  --panel: #fbfbfc;
+  --ink: #1b1f24;
+  --muted: #5d6670;
+  --line: #d3d8de;
+  --accent: #d9480f;
+  --accent-ink: #ffffff;
+  --soft: rgba(217, 72, 15, .12);
+  --checker-a: #ffffff;
+  --checker-b: #e4e7eb;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14171a; --panel: #1c2024; --ink: #e5e8eb; --muted: #9aa3ad; --line: #323940;
+    --accent: #ff7a45; --accent-ink: #1b1f24; --soft: rgba(255, 122, 69, .16);
+    --checker-a: #2a2f35; --checker-b: #22272c; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14171a; --panel: #1c2024; --ink: #e5e8eb; --muted: #9aa3ad; --line: #323940;
+  --accent: #ff7a45; --accent-ink: #1b1f24; --soft: rgba(255, 122, 69, .16);
+  --checker-a: #2a2f35; --checker-b: #22272c; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  background: var(--bg); color: var(--ink); font: 14px/1.45 var(--sans);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 14px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+header.top { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+h1 { font-size: 18px; margin: 0; font-weight: 600; letter-spacing: -.01em; }
+.step { font: 12px var(--mono); color: var(--muted); }
+.spacer { flex: 1; }
+.note { font-size: 12px; color: var(--muted); }
+
+.bench { flex: 1; min-height: 520px; display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 12px; }
+@media (max-width: 820px) {
+  .bench { grid-template-columns: minmax(0, 1fr); }
+  .stage { height: 65vh; flex: none; }
+  .parts { max-height: 60vh; }
+}
+.box { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.box.drop { outline: 2px dashed var(--accent); outline-offset: -6px; }
+.bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.bar.bottom { border-bottom: 0; border-top: 1px solid var(--line); min-height: 46px; }
+.label { font: 500 11px var(--mono); text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+.meta { font: 11px var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+.stage { position: relative; flex: 1; min-height: 0; }
+#view { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; display: block; }
+#view.grab { cursor: grab; }
+
+button { font: inherit; font-size: 13px; padding: 5px 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 4px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 500; }
+button.danger { color: var(--accent); border-color: var(--accent); }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; border-right: 1px solid var(--line); font-size: 12px; }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"], .seg button[aria-selected="true"] { background: var(--soft); font-weight: 500; }
+.tabs button { font-size: 13px; padding: 5px 14px; }
+.tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex: 1; min-width: 0; }
+.tools[hidden] { display: none; }
+#view.turn { cursor: alias; }
+#view.move { cursor: move; }
+.sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 2px; }
+input[type="number"] { font: inherit; font-size: 13px; padding: 5px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--ink); }
+.strip { display: flex; gap: 4px; align-items: center; padding: 6px 10px; border-top: 1px solid var(--line); overflow-x: auto; min-height: 40px; }
+.strip .chip { font: 500 12px var(--mono); min-width: 30px; padding: 4px 6px; text-align: center; }
+.strip .chip[aria-current="true"] { background: var(--soft); border-color: var(--accent); }
+.strip input[type="range"] { flex: 1; min-width: 120px; accent-color: var(--accent); }
+#recBtn.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+#transport[hidden], #strip[hidden] { display: none; }
+.menu { position: relative; }
+.menu summary { list-style: none; font-size: 13px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; background: var(--panel); }
+.menu summary::-webkit-details-marker { display: none; }
+.menu[open] summary { border-color: var(--muted); }
+.menu-body { position: absolute; right: 0; top: calc(100% + 6px); width: min(340px, calc(100vw - 32px)); max-height: 60vh; overflow: auto; z-index: 20;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,.14); padding: 6px; display: flex; flex-direction: column; gap: 4px; }
+.saved { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 10px; padding: 6px; border-radius: 4px; }
+.saved.current { background: var(--soft); }
+.saved .thumb { width: 56px; height: 56px; cursor: default; }
+.pop { position: absolute; top: 10px; right: 10px; z-index: 5; width: min(280px, calc(100% - 20px)); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 6px; box-shadow: 0 8px 24px rgba(0,0,0,.14); padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.pop[hidden] { display: none; }
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.field select, .field input { color: var(--ink); }
+input[type="color"] { width: 48px; height: 28px; padding: 0 2px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); }
+.smooth summary { font-size: 12px; color: var(--muted); cursor: pointer; padding: 2px 0; }
+.smooth[open] { display: flex; flex-direction: column; gap: 8px; padding-bottom: 4px; }
+.smooth input[type="range"] { accent-color: var(--accent); width: 100%; }
+.row-actions .chip { min-width: 26px; padding: 2px 6px; font: 500 12px var(--mono); }
+.chip[aria-pressed="true"] { background: var(--soft); border-color: var(--accent); }
+.attach { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
+input[type="text"], select { font: inherit; font-size: 13px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--ink); min-width: 0; }
+label.check { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); cursor: pointer; }
+.hint { color: var(--muted); font-size: 13px; }
+kbd { font: 11px var(--mono); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; color: var(--ink); }
+#nameForm { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; flex: 1; }
+#nameForm input { flex: 1; min-width: 140px; max-width: 260px; }
+
+.parts { overflow: auto; flex: 1; padding: 6px; display: flex; flex-direction: column; gap: 4px; }
+.part { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px; padding: 6px; border: 1px solid transparent; border-radius: 4px; }
+.part.selected { border-color: var(--accent); background: var(--soft); }
+.thumb { width: 64px; height: 64px; border-radius: 3px; display: flex; align-items: center; justify-content: center; overflow: hidden; cursor: pointer;
+  background: repeating-conic-gradient(var(--checker-b) 0 25%, var(--checker-a) 0 50%) 0 0 / 12px 12px; }
+.thumb img { max-width: 100%; max-height: 100%; display: block; }
+.part-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.part-body input { width: 100%; }
+.row-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.row-actions button { font-size: 12px; padding: 2px 8px; }
+.row-actions select { font-size: 12px; padding: 2px 4px; }
+.empty { color: var(--muted); padding: 14px 10px; font-size: 13px; line-height: 1.5; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<header class="top">
+  <h1>Puppet Rig</h1>
+  <span class="step" id="stepLabel">Cut parts</span>
+  <span class="spacer"></span>
+  <span class="note" id="saveNote"></span>
+  <span class="tools" style="flex:none">
+    <button type="button" id="undoBtn" title="Undo (Cmd/Ctrl+Z)" disabled>Undo</button>
+    <button type="button" id="redoBtn" title="Redo (Shift+Cmd/Ctrl+Z)" disabled>Redo</button>
+    <input type="text" id="puppetName" aria-label="Puppet name" placeholder="Untitled puppet" style="width:12em">
+    <button type="button" class="primary" id="saveBtn">Save</button>
+    <button type="button" id="newPuppet" title="Start a new puppet">New</button>
+    <details class="menu" id="myPuppets">
+      <summary id="puppetsSummary">My puppets</summary>
+      <div class="menu-body">
+        <div class="row-actions">
+          <button type="button" id="dlPuppet" title="Keep the whole puppet (images, rig and movements) as a file">Download puppet file</button>
+          <button type="button" id="openPuppetFile">Open puppet file…</button>
+          <input type="file" id="puppetFileIn" accept=".json,application/json" hidden>
+        </div>
+        <div id="puppetList"><div class="empty">Loading…</div></div>
+      </div>
+    </details>
+  </span>
+</header>
+
+<main class="bench">
+  <section class="box" id="leftBox" aria-label="Sheet">
+    <div class="bar">
+      <div class="seg tabs" role="tablist" aria-label="Mode" id="tabSeg">
+        <button type="button" role="tab" data-tab="cut">Cut</button>
+        <button type="button" role="tab" data-tab="rig">Rig</button>
+        <button type="button" role="tab" data-tab="move">Move</button>
+      </div>
+      <span class="tools" id="cutTools">
+        <select id="sheetSel" aria-label="Sheet" title="Switch between the images you've opened"></select>
+        <span class="meta" id="sheetName"></span>
+        <button type="button" id="removeSheet" title="Remove this image. Parts already cut from it stay.">Remove</button>
+        <span class="spacer"></span>
+        <button id="openBtn" type="button">Open full image…</button>
+        <input type="file" id="openFile" accept="image/*" hidden>
+        <span class="seg" role="group" aria-label="Background" id="modeSeg">
+          <button type="button" data-mode="outside" title="Drop only the paper around the outline; keep white areas inside the figure. For line art.">Remove outside paper</button>
+          <button type="button" data-mode="ink" title="Keep only the ink, drop all paper. For lino prints and stamps.">Ink only</button>
+          <button type="button" data-mode="keep" title="Keep the image as it is. For photos and paintings.">Keep all</button>
+        </span>
+        <label class="check"><input type="checkbox" id="showOrig"> Original</label>
+      </span>
+      <span class="tools" id="rigTools" hidden>
+        <span class="seg" role="group" aria-label="Tool" id="toolSeg">
+          <button type="button" data-tool="move" title="Drag a piece to turn it around its joint. Drag the main piece to move the puppet; Shift-drag to turn it.">Move &amp; turn</button>
+          <button type="button" data-tool="join" title="Click a piece's joint, then the spot it attaches to on another piece.">Join</button>
+          <button type="button" data-tool="pivot" title="Click on a piece to move its joint there.">Set joint</button>
+        </span>
+        <button type="button" id="combineBtn" hidden title="Turn the selected whole-fish (or whole-figure) pieces into ONE piece that shows one stamp at a time, in the order you selected them. Don't include tails or fins: they'd become stamps too. Undo with Cmd/Ctrl+Z.">Combine as stamps</button>
+        <span class="spacer"></span>
+        <label class="check" title="When several pieces are selected, the others turn the opposite way"><input type="checkbox" id="mirror"> Mirror</label>
+        <label class="check"><input type="checkbox" id="showJoints" checked> Joints</label>
+        <button type="button" id="resetPose" title="Turn every piece back to how it was when you joined it">Reset pose</button>
+        <button type="button" id="fitView">Fit</button>
+      </span>
+      <span class="tools" id="moveTools" hidden>
+        <label class="attach" for="moveSel">Movement</label>
+        <select id="moveSel" aria-label="Movement"></select>
+        <input type="text" id="moveName" aria-label="Movement name" style="width:9em">
+        <button type="button" id="newMove" title="Start a new pose-by-pose movement">New</button>
+        <button type="button" id="delMove">Delete</button>
+        <span class="spacer"></span>
+        <label class="check" title="When several pieces are selected, the others turn the opposite way"><input type="checkbox" id="mirror2"> Mirror</label>
+        <label class="check"><input type="checkbox" id="onion" checked> Onion skin</label>
+        <label class="check"><input type="checkbox" id="showJoints2"> Joints</label>
+        <button type="button" id="fitView2">Fit</button>
+      </span>
+    </div>
+    <div class="stage" id="stage"><canvas id="view" aria-label="Sheet: click around a piece to cut it out"></canvas>
+      <div class="pop" id="exportPanel" hidden>
+        <div class="label">Export this movement</div>
+        <label class="field">Format
+          <select id="exFormat"><option value="gif">GIF</option><option value="mp4">MP4 video</option></select></label>
+        <label class="field">Size (longest side)
+          <select id="exSize"><option value="480">480 px</option><option value="720" selected>720 px</option><option value="1080">1080 px</option></select></label>
+        <label class="field">Background <input type="color" id="exBg" value="#ffffff"></label>
+        <label class="check" id="exTransWrap"><input type="checkbox" id="exTrans"> Transparent background</label>
+        <label class="field" id="exLoopsWrap">Repeat the movement
+          <input type="number" id="exLoops" min="1" max="50" value="4" style="width:4.5em"></label>
+        <div class="tools" style="flex:none">
+          <button type="button" class="primary" id="exGo">Export</button>
+          <button type="button" id="exClose">Close</button>
+        </div>
+        <div class="note" id="exStatus" role="status"></div>
+      </div>
+    </div>
+    <div class="strip" id="strip" hidden></div>
+    <div class="bar bottom" id="transport" hidden>
+      <button type="button" class="primary" id="playBtn" title="Play / stop (Space)">Play</button>
+      <button type="button" id="recBtn" title="Record live: drag pieces while it records">Record</button>
+      <button type="button" id="exportBtn" title="Save this movement as a GIF or MP4 file">Export…</button>
+      <span class="sep"></span>
+      <span class="tools" id="poseTools" style="flex:none">
+        <button type="button" id="addFrame" title="Save the current pose as a new frame after the selected one">Add frame</button>
+        <button type="button" id="replaceFrame" title="Overwrite the selected frame with the current pose">Replace</button>
+        <button type="button" id="deleteFrame">Delete frame</button>
+        <span class="sep"></span>
+        <select id="timeUnit" aria-label="Timing"><option value="secs">Seconds per frame</option><option value="bpm">BPM</option></select>
+        <input type="number" id="secsIn" min="0.04" max="10" step="0.05" aria-label="Seconds per frame" style="width:5.5em">
+        <span id="bpmBox" class="tools" style="flex:none;gap:4px">
+          <input type="number" id="bpmIn" min="20" max="300" step="0.5" aria-label="Beats per minute" style="width:5.5em">
+          <span class="note">BPM ×</span>
+          <input type="number" id="beatsIn" min="0.25" max="16" step="0.25" aria-label="Beats per frame" style="width:4.5em">
+          <span class="note">beats each</span>
+        </span>
+        <span class="sep"></span>
+        <label class="attach" for="inbIn" title="Frames filled in between each pair of your frames">In-betweens</label>
+        <input type="number" id="inbIn" min="0" max="12" step="1" style="width:4em">
+        <select id="easeSel" aria-label="Easing" title="How the in-betweens speed up and slow down">
+          <option value="inout">Ease in &amp; out</option><option value="out">Ease out</option><option value="in">Ease in</option><option value="linear">Even</option>
+        </select>
+        <label class="attach" for="arcIn" title="Bend the path between frames into a curve">Arc</label>
+        <input type="range" id="arcIn" min="-100" max="100" step="5" style="width:90px;accent-color:var(--accent)">
+      </span>
+      <span class="tools" id="liveTools" style="flex:none" hidden>
+        <span class="note" id="liveInfo"></span>
+        <select id="speedSel" aria-label="Playback speed"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1">1×</option><option value="2">2×</option></select>
+      </span>
+    </div>
+    <div class="bar bottom">
+      <span class="hint" id="hint"></span>
+      <form id="nameForm" hidden>
+        <input type="text" id="partName" list="nameSuggestions" placeholder="Name this part" autocomplete="off">
+        <button class="primary" type="submit" id="savePart">Save part</button>
+        <button type="button" id="cancelDraft">Cancel</button>
+      </form>
+    </div>
+  </section>
+
+  <section class="box" id="rightBox" aria-label="Parts">
+    <div class="bar">
+      <span class="label">Parts</span>
+      <span class="meta" id="partCount"></span>
+      <span class="spacer"></span>
+      <button id="uploadPartsBtn" type="button">Upload part images…</button>
+      <input type="file" id="partFiles" accept="image/*" multiple hidden>
+    </div>
+    <div class="parts" id="partsList"></div>
+  </section>
+</main>
+
+<datalist id="nameSuggestions">
+  <option value="body"><option value="head"><option value="torso">
+  <option value="upper arm L"><option value="upper arm R"><option value="forearm L"><option value="forearm R">
+  <option value="hand L"><option value="hand R"><option value="thigh L"><option value="thigh R">
+  <option value="shin L"><option value="shin R"><option value="foot L"><option value="foot R">
+  <option value="tail"><option value="fin"><option value="wing"><option value="antenna">
+</datalist>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const canvas = $('view');
+  const ctx = canvas.getContext('2d');
+  const STORE = 'puppet-rig/v1';
+  const HIT = 9;            // px on screen for grabbing a point
+
+  const S = {
+    sheet: null,            // the sheet showing: {id, img, w, h, name, dataURL, example, mode}
+    sheets: [],             // every image opened
+    mode: 'outside',
+    processed: null,        // canvas: sheet with background handled
+    parts: [],              // {id, name, kind:'cut'|'upload', sheetId, poly, x, y, canvas, url, mode, orig}
+    draft: null,            // {pts:[[x,y]], closed, editId}
+    cursor: null,
+    drag: null,
+    selected: null,
+    showOrig: false,
+    view: { s: 1, ox: 0, oy: 0 },     // sheet view (Cut)
+    tab: 'cut',
+    tool: 'move',
+    rview: { s: 1, ox: 0, oy: 0 },    // puppet view (Rig)
+    rigFitted: false,
+    showJoints: true,
+    join: null,             // {childId, pt:[x,y] in world} while joining
+    rdrag: null,            // what a drag in Rig is doing
+    moves: [],              // {id, name, kind:'poses'|'live', frames:[pose], unit, secs, bpm, beats, speed}
+    moveId: null,
+    frame: 0,               // selected frame
+    playing: false,
+    rec: null,              // live recording in progress
+    onion: true,
+    openSmooth: new Set(),  // which parts have their Smoothing panel open
+    sel: new Set(),         // pieces selected on the puppet (turn together)
+    pending: null,          // a Shift/Cmd-click that hasn't become a drag yet
+    mirror: false,
+  };
+  const puppetTab = () => S.tab === 'rig' || S.tab === 'move';
+  const LIVE_FPS = 24;
+  let seq = 0;
+  const newId = p => p + Date.now().toString(36) + (seq++).toString(36);
+
+  // ---------- background handling ----------
+
+  function paperColour(px, w, h) {
+    const rs = [], gs = [], bs = [];
+    const take = i => { if (px[i + 3] > 200) { rs.push(px[i]); gs.push(px[i + 1]); bs.push(px[i + 2]); } };
+    for (let x = 0; x < w; x++) { take(x * 4); take(((h - 1) * w + x) * 4); }
+    for (let y = 0; y < h; y++) { take(y * w * 4); take((y * w + w - 1) * 4); }
+    const med = a => { if (!a.length) return 255; a.sort((p, q) => p - q); return a[a.length >> 1]; };
+    return [med(rs), med(gs), med(bs)];
+  }
+
+  // pull the paper colour back out of a half-transparent pixel so edges don't look washed out
+  function unmix(px, i, a, paper) {
+    for (let k = 0; k < 3; k++) px[i + k] = Math.max(0, Math.min(255, (px[i + k] - paper[k] * (1 - a)) / a));
+  }
+
+  function processImage(img, mode) {
+    const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.drawImage(img, 0, 0);
+    if (mode === 'keep') return c;
+    const data = x.getImageData(0, 0, w, h), px = data.data, n = w * h;
+    const paper = paperColour(px, w, h);
+    const dist = new Float32Array(n);
+    for (let j = 0; j < n; j++) {
+      const i = j * 4;
+      dist[j] = Math.hypot(px[i] - paper[0], px[i + 1] - paper[1], px[i + 2] - paper[2]) / 441.7;
+    }
+    if (mode === 'ink') {
+      for (let j = 0; j < n; j++) {
+        const i = j * 4, a = Math.max(0, Math.min(1, (dist[j] - 0.06) / 0.3));
+        if (a > 0 && a < 1) unmix(px, i, a, paper);
+        px[i + 3] = Math.round(px[i + 3] * a);
+      }
+    } else {
+      // remove outside paper: flood in from the edges through paper-coloured pixels only
+      const TOL = 0.16, gone = new Uint8Array(n), stack = [];
+      const seed = j => { if (!gone[j] && dist[j] < TOL) { gone[j] = 1; stack.push(j); } };
+      for (let xx = 0; xx < w; xx++) { seed(xx); seed((h - 1) * w + xx); }
+      for (let yy = 0; yy < h; yy++) { seed(yy * w); seed(yy * w + w - 1); }
+      while (stack.length) {
+        const j = stack.pop(), xx = j % w;
+        if (xx > 0) seed(j - 1);
+        if (xx < w - 1) seed(j + 1);
+        if (j >= w) seed(j - w);
+        if (j < n - w) seed(j + w);
+      }
+      for (let j = 0; j < n; j++) {
+        const i = j * 4;
+        if (gone[j]) { px[i + 3] = 0; continue; }
+        // soften the edge: light pixels touching removed paper become partly see-through
+        const xx = j % w;
+        const edge = (xx > 0 && gone[j - 1]) || (xx < w - 1 && gone[j + 1]) || (j >= w && gone[j - w]) || (j < n - w && gone[j + w]);
+        if (edge) {
+          const a = Math.max(0.05, Math.min(1, (dist[j] - 0.04) / 0.3));
+          if (a < 1) unmix(px, i, a, paper);
+          px[i + 3] = Math.round(px[i + 3] * a);
+        }
+      }
+    }
+    x.putImageData(data, 0, 0);
+    return c;
+  }
+
+  function trim(c) {
+    const x = c.getContext('2d', { willReadFrequently: true });
+    const { data } = x.getImageData(0, 0, c.width, c.height);
+    let x0 = c.width, y0 = c.height, x1 = -1, y1 = -1;
+    for (let y = 0; y < c.height; y++) for (let xx = 0; xx < c.width; xx++) {
+      if (data[(y * c.width + xx) * 4 + 3] > 8) { if (xx < x0) x0 = xx; if (xx > x1) x1 = xx; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    }
+    if (x1 < 0) return [c, 0, 0];
+    const out = document.createElement('canvas');
+    out.width = x1 - x0 + 1; out.height = y1 - y0 + 1;
+    out.getContext('2d').drawImage(c, -x0, -y0);
+    return [out, x0, y0];
+  }
+
+  // ---------- parts ----------
+
+  function polyBox(pts, w, h) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [x, y] of pts) { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    x0 = Math.max(0, Math.floor(x0)); y0 = Math.max(0, Math.floor(y0));
+    x1 = Math.min(w, Math.ceil(x1)); y1 = Math.min(h, Math.ceil(y1));
+    return [x0, y0, Math.max(1, x1 - x0), Math.max(1, y1 - y0)];
+  }
+
+  function extract(part) {
+    const sh = sheetById(part.sheetId);
+    if (!sh) return;
+    const [x0, y0, w, h] = polyBox(part.poly, sh.w, sh.h);
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const x = c.getContext('2d');
+    x.beginPath();
+    part.poly.forEach(([px, py], i) => (i ? x.lineTo : x.moveTo).call(x, px - x0, py - y0));
+    x.closePath();
+    x.clip();
+    x.drawImage(processedOf(sh), -x0, -y0);
+    finishPart(part, c, x0, y0);
+  }
+
+  // ---------- smoothing (only ever uses the part's own pixels) ----------
+  // part.smooth = { joint: px of cap grown around the joint, rough: px of ragged cut edge, fill: fill where other parts overlap }
+
+  // swap in a part's new image; if its top-left corner moved, keep its joint and anything attached to it in place
+  function setPartCanvas(part, c, x0, y0) {
+    if (part.rig && part.x !== undefined && (part.x !== x0 || part.y !== y0)) {
+      const dx = part.x - x0, dy = part.y - y0;
+      part.rig.pivot = [part.rig.pivot[0] + dx, part.rig.pivot[1] + dy];
+      (part.variants || []).forEach(st => { st.dx += dx; st.dy += dy; });
+      S.parts.filter(q => q.rig && q.rig.parent === part.id).forEach(q => { q.rig.anchor = [q.rig.anchor[0] + dx, q.rig.anchor[1] + dy]; });
+    }
+    part.x = x0; part.y = y0; part.canvas = c; part.url = c.toDataURL(); part.alpha = null;
+  }
+
+  function finishPart(part, base, bx, by) {
+    const sm = part.smooth || {};
+    let c = base, pad = 0;
+    if (part.kind === 'cut' && sm.fill) c = fillOverlaps(part, c, bx, by);
+    if (part.kind === 'cut' && sm.rough > 0) c = roughen(part, c, bx, by, sm.rough);
+    if (sm.joint > 0 && part.rig && part.x !== undefined) {
+      pad = Math.round(sm.joint);
+      // where the joint sits on the un-padded image
+      const piv = [part.rig.pivot[0] + part.x - bx, part.rig.pivot[1] + part.y - by];
+      c = jointCap(c, piv, pad);
+    }
+    setPartCanvas(part, c, bx - pad, by - pad);
+  }
+
+  function seeded(str) {
+    let h = 1779033703;
+    for (let i = 0; i < str.length; i++) h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+    return () => { h = Math.imul(h ^ (h >>> 15), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909); return ((h ^= h >>> 16) >>> 0) / 4294967296; };
+  }
+
+  // fill target pixels outward from known ones, copying a random neighbouring pixel each step,
+  // so the fill carries on the part's own texture rather than smearing it
+  function inpaint(px, w, h, target, known, rand) {
+    const done = known.slice(), queued = new Uint8Array(w * h);
+    let front = [];
+    const near = i => { const x = i % w, y = (i / w) | 0, out = [];
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue; const xx = x + dx, yy = y + dy;
+        if (xx >= 0 && yy >= 0 && xx < w && yy < h) out.push(yy * w + xx);
+      } return out; };
+    for (let i = 0; i < w * h; i++) if (target[i] && !done[i] && near(i).some(j => done[j])) { front.push(i); queued[i] = 1; }
+    while (front.length) {
+      const filled = [];
+      for (const i of front) {
+        const src = near(i).filter(j => done[j]);
+        if (!src.length) continue;
+        const j = src[(rand() * src.length) | 0];
+        for (let k = 0; k < 4; k++) px[i * 4 + k] = px[j * 4 + k];
+        filled.push(i);
+      }
+      for (const i of filled) done[i] = 1;
+      const next = [];
+      for (const i of filled) for (const j of near(i)) if (target[j] && !done[j] && !queued[j]) { queued[j] = 1; next.push(j); }
+      front = next;
+    }
+  }
+
+  function polyMask(polys, w, h, ox, oy) {
+    const m = document.createElement('canvas'); m.width = w; m.height = h;
+    const x = m.getContext('2d', { willReadFrequently: true });
+    x.fillStyle = '#000';
+    for (const poly of polys) {
+      x.beginPath(); poly.forEach(([px, py], i) => (i ? x.lineTo : x.moveTo).call(x, px - ox, py - oy)); x.closePath(); x.fill();
+    }
+    const d = x.getImageData(0, 0, w, h).data, out = new Uint8Array(w * h);
+    for (let i = 0; i < out.length; i++) out[i] = d[i * 4 + 3] > 127 ? 1 : 0;
+    return out;
+  }
+
+  // where another part cut from the same sheet overlaps this one, rebuild that area from this part's own pixels
+  function fillOverlaps(part, base, bx, by) {
+    const others = S.parts.filter(q => q !== part && q.kind === 'cut' && q.sheetId === part.sheetId && q.poly).map(q => q.poly);
+    if (!others.length) return base;
+    const w = base.width, h = base.height;
+    const region = polyMask(others, w, h, bx, by), inside = polyMask([part.poly], w, h, bx, by);
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(base, 0, 0);
+    const img = x.getImageData(0, 0, w, h), px = img.data;
+    const target = new Uint8Array(w * h), known = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+      if (region[i] && inside[i]) { target[i] = 1; px[i * 4 + 3] = 0; }
+      else if (px[i * 4 + 3] >= 128) known[i] = 1;
+    }
+    inpaint(px, w, h, target, known, seeded(part.id + 'fill'));
+    x.putImageData(img, 0, 0);
+    return c;
+  }
+
+  // break up the straight cut edge so it looks printed, eating up to `rough` px into the part
+  function roughen(part, base, bx, by, rough) {
+    const w = base.width, h = base.height, inside = polyMask([part.poly], w, h, bx, by);
+    // distance (in px, up to rough+1) from the cut line, measured inwards
+    const dist = new Float32Array(w * h).fill(rough + 1);
+    for (let i = 0; i < w * h; i++) if (!inside[i]) dist[i] = 0;
+    for (let pass = 0; pass < rough + 1; pass++) {
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const i = y * w + x; if (!inside[i]) continue;
+        let d = dist[i];
+        if (x === 0 || x === w - 1 || y === 0 || y === h - 1) d = Math.min(d, 1);
+        else d = Math.min(d, dist[i - 1] + 1, dist[i + 1] + 1, dist[i - w] + 1, dist[i + w] + 1);
+        dist[i] = d;
+      }
+    }
+    const rand = seeded(part.id + 'rough');
+    const noise = new Float32Array(w * h);
+    for (let i = 0; i < noise.length; i++) noise[i] = rand();
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(base, 0, 0);
+    const img = x.getImageData(0, 0, w, h), px = img.data;
+    for (let i = 0; i < w * h; i++) {
+      const d = dist[i];
+      if (!inside[i] || d > rough) continue;
+      // nearer the cut, more chance a pixel drops out, like ink that didn't quite reach the edge
+      const xx = i % w, yy = (i / w) | 0;
+      const n = (noise[i] + (xx > 0 ? noise[i - 1] : 0.5) + (yy > 0 ? noise[i - w] : 0.5)) / 3;
+      if (n > d / rough) px[i * 4 + 3] = 0;
+    }
+    x.putImageData(img, 0, 0);
+    return c;
+  }
+
+  // grow a rounded cap of the part's own texture around its joint, so turning it never opens a gap
+  function jointCap(base, piv, r) {
+    const w = base.width + r * 2, h = base.height + r * 2;
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(base, r, r);
+    const img = x.getImageData(0, 0, w, h), px = img.data;
+    const cx = piv[0] + r, cy = piv[1] + r;
+    const target = new Uint8Array(w * h), known = new Uint8Array(w * h);
+    for (let yy = 0; yy < h; yy++) for (let xx = 0; xx < w; xx++) {
+      const i = yy * w + xx;
+      if (px[i * 4 + 3] >= 128) known[i] = 1;
+      else if (Math.hypot(xx - cx, yy - cy) <= r) target[i] = 1;
+    }
+    inpaint(px, w, h, target, known, seeded('cap' + w + 'x' + h));
+    x.putImageData(img, 0, 0);
+    return c;
+  }
+
+  // you can open several images; each is a sheet with its own background setting
+  const sheetById = id => S.sheets.find(sh => sh.id === id);
+  function processedOf(sh) {
+    if (!sh.processed || sh.pmode !== sh.mode) { sh.processed = processImage(sh.img, sh.mode); sh.pmode = sh.mode; }
+    return sh.processed;
+  }
+  function reprocessSheet() {
+    if (!S.sheet) return;
+    S.sheet.mode = S.mode;
+    S.processed = processedOf(S.sheet);
+    S.parts.filter(p => p.kind === 'cut' && p.sheetId === S.sheet.id).forEach(extract);
+  }
+
+  const loadImage = src => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
+  const readFile = f => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(f); });
+
+  async function addUploadedPart(file, batch) {
+    const orig = await readFile(file);
+    const img = await loadImage(orig);
+    const part = { id: newId('p'), name: file.name.replace(/\.[^.]+$/, ''), kind: 'upload', mode: S.mode, orig, img, batch };
+    processUpload(part);
+    S.parts.push(part);
+  }
+  function processUpload(part) {
+    const [c, ox, oy] = trim(processImage(part.img, part.mode));
+    finishPart(part, c, ox, oy);
+  }
+
+  // ---------- rig ----------
+  // Each part turns around its joint (pivot, in the part's own pixels). A part with no parent sits at
+  // `pos` in the puppet's space; an attached part's joint sits at `anchor`, a spot in its parent's pixels.
+  // `angle` is in degrees, relative to the parent.
+
+  const byId = id => S.parts.find(p => p.id === id);
+
+  function ensureRig(p) {
+    if (p.rig) return;
+    const w = p.canvas.width, h = p.canvas.height;
+    let x = p.x, y = p.y;
+    if (p.kind === 'upload' || x === undefined) {
+      // pieces uploaded together keep their places relative to each other (e.g. stamps laid out on one
+      // canvas), and the group sits to the right of everything else
+      S.batchAt = S.batchAt || {};
+      const key = p.batch || 'none';
+      if (!S.batchAt[key]) {
+        const right = Math.max(S.sheet ? S.sheet.w : 0, ...S.parts.filter(q => q.rig).map(q => worldBounds(q)[2]));
+        S.batchAt[key] = [right + 30, 20];
+      }
+      x = S.batchAt[key][0] + (p.x || 0); y = S.batchAt[key][1] + (p.y || 0);
+    }
+    p.rig = { pivot: [w / 2, h / 2], parent: null, anchor: null, pos: [x + w / 2, y + h / 2], angle: 0, angle0: 0 };
+  }
+
+  function world(p) {
+    const r = p.rig;
+    const base = r.parent && byId(r.parent) ? world(byId(r.parent)).translate(r.anchor[0], r.anchor[1]) : new DOMMatrix().translate(r.pos[0], r.pos[1]);
+    return base.rotate(r.angle).translate(-r.pivot[0], -r.pivot[1]);
+  }
+  const worldAngle = p => p.rig.angle + (p.rig.parent && byId(p.rig.parent) ? worldAngle(byId(p.rig.parent)) : 0);
+  const apply = (m, [x, y]) => { const q = m.transformPoint(new DOMPoint(x, y)); return [q.x, q.y]; };
+  const pivotWorld = p => apply(world(p), p.rig.pivot);
+  const toLocal = (p, pt) => apply(world(p).inverse(), pt);
+
+  // the image a piece is showing: its own (stamp 1) or one of the stamps combined into it,
+  // drawn at that stamp's offset so each stamp stays where it was printed
+  function faceOf(p, v = (p.rig && p.rig.v) || 0) {
+    const st = v > 0 && p.variants && p.variants[v - 1];
+    return st || { canvas: p.canvas, dx: 0, dy: 0 };
+  }
+  function drawFace(x, p) { const f = faceOf(p); x.drawImage(f.canvas, f.dx, f.dy); }
+  const stampCount = p => 1 + ((p.variants && p.variants.length) || 0);
+
+  function worldBounds(p) {
+    const m = world(p), f = faceOf(p), w = f.canvas.width, h = f.canvas.height;
+    const cs = [[f.dx, f.dy], [f.dx + w, f.dy], [f.dx, f.dy + h], [f.dx + w, f.dy + h]].map(c => apply(m, c));
+    return [Math.min(...cs.map(c => c[0])), Math.min(...cs.map(c => c[1])), Math.max(...cs.map(c => c[0])), Math.max(...cs.map(c => c[1]))];
+  }
+
+  const isAncestor = (a, p) => { for (let q = p; q && q.rig.parent; q = byId(q.rig.parent)) if (q.rig.parent === a.id) return true; return false; };
+
+  // attach (or detach, parent = null) without moving the piece on screen
+  function attachInPlace(p, parent) {
+    const W = pivotWorld(p), A = worldAngle(p);
+    if (parent) {
+      p.rig.parent = parent.id;
+      p.rig.anchor = toLocal(parent, W);
+      p.rig.angle = A - worldAngle(parent);
+    } else {
+      p.rig.parent = null; p.rig.anchor = null;
+      p.rig.pos = W; p.rig.angle = A;
+    }
+    p.rig.angle0 = p.rig.angle;
+  }
+
+  // move a piece's joint to a world point without moving the piece on screen
+  function setPivot(p, W) {
+    p.rig.pivot = toLocal(p, W);
+    if (p.rig.parent) p.rig.anchor = toLocal(byId(p.rig.parent), W); else p.rig.pos = W;
+  }
+
+  const alphaCache = new WeakMap();
+  function alphaOf(c) {
+    if (!alphaCache.has(c)) {
+      const d = c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, c.width, c.height).data;
+      const a = new Uint8Array(c.width * c.height);
+      for (let i = 0; i < a.length; i++) a[i] = d[i * 4 + 3];
+      alphaCache.set(c, a);
+    }
+    return alphaCache.get(c);
+  }
+  // the front-most piece under a world point
+  function hitPart(W) {
+    for (let i = S.parts.length - 1; i >= 0; i--) {
+      const p = S.parts[i], f = faceOf(p), [lx, ly] = toLocal(p, W), x = Math.floor(lx - f.dx), y = Math.floor(ly - f.dy);
+      const c = f.canvas;
+      if (x >= 0 && y >= 0 && x < c.width && y < c.height && alphaOf(c)[y * c.width + x] > 24) return p;
+    }
+    return null;
+  }
+
+  // the reverse of combining: every extra stamp becomes its own piece again, where it sat
+  function splitStamps(base) {
+    const A = worldAngle(base), m = world(base);
+    (base.variants || []).forEach((v, i) => {
+      const q = { id: newId('p'), name: v.name && v.name !== base.name ? v.name : `${base.name} stamp ${i + 2}`, kind: 'stamp', canvas: v.canvas, url: v.url, x: 0, y: 0 };
+      const w = v.canvas.width, h = v.canvas.height;
+      q.rig = { pivot: [w / 2, h / 2], parent: null, anchor: null, pos: apply(m, [v.dx + w / 2, v.dy + h / 2]), angle: A, angle0: A };
+      S.parts.push(q);
+    });
+    base.variants = []; base.rig.v = 0;
+    refresh();
+  }
+
+  // Shift-click several pieces in order, then combine: the first keeps its name and joint, and the
+  // others become its stamps 2, 3, 4…, each remembering where it sat
+  function combineStamps() {
+    const ids = [...S.sel].filter(id => byId(id));
+    if (ids.length < 2) return;
+    const base = byId(ids[0]);
+    base.variants = base.variants || [];
+    for (const id of ids.slice(1)) {
+      const q = byId(id);
+      for (const f of [{ canvas: q.canvas, dx: 0, dy: 0, url: q.url, name: q.name }, ...(q.variants || [])]) {
+        const [dx, dy] = toLocal(base, apply(world(q), [f.dx, f.dy]));
+        base.variants.push({ canvas: f.canvas, url: f.url, dx, dy, name: f.name || q.name });
+      }
+      S.parts.filter(c => c.rig && c.rig.parent === q.id).forEach(c => attachInPlace(c, base));
+      S.parts = S.parts.filter(x => x !== q);
+    }
+    base.rig.v = 0;
+    S.sel = new Set([base.id]); S.selected = base.id;
+    refresh();
+  }
+
+  function fitRig() {
+    const r = canvas.getBoundingClientRect();
+    if (!S.parts.length) { S.rview = { s: 1, ox: 0, oy: 0 }; return; }
+    const bs = S.parts.map(worldBounds);
+    const x0 = Math.min(...bs.map(b => b[0])), y0 = Math.min(...bs.map(b => b[1]));
+    const x1 = Math.max(...bs.map(b => b[2])), y1 = Math.max(...bs.map(b => b[3]));
+    const pad = 40, s = Math.min((r.width - pad * 2) / Math.max(1, x1 - x0), (r.height - pad * 2) / Math.max(1, y1 - y0));
+    S.rview = { s, ox: (r.width - (x1 - x0) * s) / 2 - x0 * s, oy: (r.height - (y1 - y0) * s) / 2 - y0 * s };
+    S.rigFitted = true;
+  }
+  const toWorld = e => { const r = canvas.getBoundingClientRect(), { s, ox, oy } = S.rview; return [(e.clientX - r.left - ox) / s, (e.clientY - r.top - oy) / s]; };
+  const worldToScr = ([x, y]) => [x * S.rview.s + S.rview.ox, y * S.rview.s + S.rview.oy];
+
+  function drawPuppet(alpha = 1) {
+    const { s, ox, oy } = S.rview;
+    ctx.globalAlpha = alpha;
+    for (const p of S.parts) {
+      ctx.save();
+      ctx.transform(s, 0, 0, s, ox, oy);
+      const m = world(p);
+      ctx.transform(m.a, m.b, m.c, m.d, m.e, m.f);
+      drawFace(ctx, p);
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function renderRig() {
+    const { s, ox, oy } = S.rview, accent = token('--accent');
+    ctx.imageSmoothingQuality = 'high';
+    const m0 = curMove();
+    if (S.tab === 'move' && S.onion && !S.playing && !S.rec && m0 && m0.kind === 'poses' && S.frame > 0 && m0.frames[S.frame - 1]) {
+      // the previous frame, faintly, behind the current pose
+      const now = capturePose();
+      applyPose(m0.frames[S.frame - 1]);
+      drawPuppet(.22);
+      applyPose(now);
+    }
+    for (const p of S.parts) {
+      ctx.save();
+      ctx.transform(s, 0, 0, s, ox, oy);
+      const m = world(p);
+      ctx.transform(m.a, m.b, m.c, m.d, m.e, m.f);
+      drawFace(ctx, p);
+      if (S.sel.has(p.id)) {
+        const f = faceOf(p);
+        ctx.setLineDash([5 / s, 4 / s]); ctx.lineWidth = 1.5 / s; ctx.strokeStyle = accent;
+        ctx.strokeRect(f.dx, f.dy, f.canvas.width, f.canvas.height); ctx.setLineDash([]);
+      }
+      ctx.restore();
+    }
+    if (S.showJoints && !S.playing && !S.rec || (S.tab === 'rig' && S.tool !== 'move')) {
+      for (const p of S.parts) {
+        const [sx, sy] = worldToScr(pivotWorld(p));
+        ctx.beginPath();
+        if (p.rig.parent) ctx.arc(sx, sy, 5, 0, Math.PI * 2); else ctx.rect(sx - 5, sy - 5, 10, 10);
+        ctx.fillStyle = token('--panel'); ctx.fill();
+        ctx.lineWidth = 2; ctx.strokeStyle = accent; ctx.stroke();
+        if (p.rig.parent) { ctx.beginPath(); ctx.arc(sx, sy, 1.5, 0, Math.PI * 2); ctx.fillStyle = accent; ctx.fill(); }
+      }
+    }
+    if (S.join) {
+      const [sx, sy] = worldToScr(S.join.pt);
+      ctx.beginPath(); ctx.arc(sx, sy, 8, 0, Math.PI * 2);
+      ctx.lineWidth = 2.5; ctx.strokeStyle = accent; ctx.stroke();
+      if (S.cursor) {
+        const [cx, cy] = worldToScr(S.cursor);
+        ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(cx, cy); ctx.stroke(); ctx.setLineDash([]);
+      }
+    }
+  }
+
+  const tool = () => S.tab === 'move' ? 'move' : S.tool;
+
+  function rigDown(e) {
+    const W = toWorld(e), p = hitPart(W);
+    if (S.playing) stopPlay();
+    if (S.rec && p) S.rec.touched.add(p.id);
+    if (tool() === 'join') {
+      if (!S.join) {
+        if (!p) return;
+        S.join = { childId: p.id, pt: W };
+        S.selected = p.id;
+      } else {
+        const child = byId(S.join.childId);
+        if (!p || p === child || isAncestor(child, p)) return;   // can't attach to itself or to something hanging off it
+        setPivot(child, S.join.pt);
+        const A = worldAngle(child) - worldAngle(p);   // keep the piece's current tilt
+        child.rig.parent = p.id;
+        child.rig.anchor = toLocal(p, W);
+        child.rig.angle = A; child.rig.angle0 = A;
+        S.join = null;
+      }
+      refresh(); return;
+    }
+    if (tool() === 'pivot') {
+      if (p) { setPivot(p, W); S.selected = p.id; refresh(); }
+      return;
+    }
+    // move & turn
+    const toggle = e.shiftKey || e.metaKey || e.ctrlKey;
+    if (!p) { if (!toggle) { S.sel.clear(); S.selected = null; } refresh(); return; }
+    canvas.setPointerCapture(e.pointerId);
+    if (toggle) {
+      // a Shift/Cmd-click adds or removes the piece from the selection; a Shift-drag still turns it
+      S.pending = { p, W, x: e.clientX, y: e.clientY };
+      return;
+    }
+    if (!S.sel.has(p.id)) S.sel = new Set([p.id]);
+    S.selected = p.id;
+    startDrag(p, W, false);
+    refresh();
+  }
+
+  // dragging one selected piece turns every selected piece by the same amount, each around its own joint
+  // (or the opposite way with Mirror on)
+  function startDrag(p, W, forceTurn) {
+    const turn = p.rig.parent || forceTurn;
+    const c = pivotWorld(p);
+    const others = [...S.sel].map(byId).filter(q => q && q !== p && q.rig);
+    S.rdrag = turn
+      ? { kind: 'turn', p, c, a0: Math.atan2(W[1] - c[1], W[0] - c[0]), start: p.rig.angle, others: others.map(q => [q, q.rig.angle]) }
+      : { kind: 'move', p, start: p.rig.pos.slice(), W0: W };
+    if (S.rec) [p, ...(turn ? others : [])].forEach(q => S.rec.touched.add(q.id));
+  }
+
+  function rigMove(e) {
+    const W = toWorld(e), d = S.rdrag;
+    if (S.pending && Math.hypot(e.clientX - S.pending.x, e.clientY - S.pending.y) > 4) {
+      const { p } = S.pending; S.pending = null;
+      S.sel.add(p.id); S.selected = p.id;
+      startDrag(p, toWorld({ clientX: e.clientX, clientY: e.clientY }), true);
+    }
+    if (d && d.kind === 'turn') {
+      const delta = (Math.atan2(W[1] - d.c[1], W[0] - d.c[0]) - d.a0) * 180 / Math.PI;
+      d.p.rig.angle = d.start + delta;
+      for (const [q, a] of d.others) q.rig.angle = a + (S.mirror ? -delta : delta);
+      render(); return;
+    }
+    if (d && d.kind === 'move') {
+      d.p.rig.pos = [d.start[0] + W[0] - d.W0[0], d.start[1] + W[1] - d.W0[1]];
+      render(); return;
+    }
+    S.cursor = W;
+    const p = hitPart(W);
+    canvas.className = tool() !== 'move' || !p ? '' : (p.rig.parent || e.shiftKey ? 'turn' : 'move');
+    if (S.join) render();
+  }
+  function rigUp() {
+    if (S.pending) {
+      const id = S.pending.p.id; S.pending = null;
+      if (S.sel.has(id)) S.sel.delete(id); else S.sel.add(id);
+      S.selected = S.sel.size ? id : null;
+      refresh(); return;
+    }
+    if (S.rdrag) { S.rdrag = null; renderFooter(); persist(); }
+  }
+
+  // ---------- sheet ----------
+
+  async function addSheet(dataURL, name, example = false, id = null, mode = null) {
+    const img = await loadImage(dataURL);
+    const sh = { id: id || newId('s'), img, w: img.naturalWidth, h: img.naturalHeight, name, dataURL, example, mode: mode || S.mode || 'outside' };
+    S.sheets.push(sh);
+    return sh;
+  }
+  function showSheet(sh) {
+    S.sheet = sh; S.mode = sh.mode; S.draft = null;
+    S.processed = processedOf(sh);
+    fit(); refresh();
+  }
+  // open an image as a new sheet (the untouched example sheet makes way for your first image)
+  async function setSheet(dataURL, name, example = false, id = null) {
+    S.sheets = S.sheets.filter(sh => !(sh.example && !S.parts.some(p => p.sheetId === sh.id)));
+    showSheet(await addSheet(dataURL, name, example, id));
+  }
+
+  // a simple stand-in puppet sheet so the page shows something before you open your own
+  function exampleSheet() {
+    const c = document.createElement('canvas');
+    c.width = 640; c.height = 820;
+    const x = c.getContext('2d');
+    x.fillStyle = '#fff'; x.fillRect(0, 0, 640, 820);
+    x.lineWidth = 3; x.strokeStyle = '#111'; x.lineJoin = 'round'; x.lineCap = 'round';
+    const shape = (draw, fill = '#fff') => { x.beginPath(); draw(); x.closePath(); x.fillStyle = fill; x.fill(); x.stroke(); };
+    const hole = (cx, cy) => { x.beginPath(); x.arc(cx, cy, 7, 0, Math.PI * 2); x.fillStyle = '#111'; x.fill(); };
+    // body: head, torso and skirt with shoulder stubs
+    shape(() => {
+      x.moveTo(300, 70); x.quadraticCurveTo(370, 70, 380, 140); x.lineTo(420, 160); x.lineTo(378, 178);
+      x.quadraticCurveTo(360, 230, 330, 238); x.lineTo(340, 262); x.lineTo(430, 270); x.lineTo(432, 296); x.lineTo(352, 300);
+      x.quadraticCurveTo(372, 420, 410, 640); x.lineTo(392, 700); x.lineTo(350, 712); x.lineTo(360, 740); x.lineTo(300, 744);
+      x.lineTo(300, 712); x.lineTo(230, 700); x.quadraticCurveTo(232, 520, 262, 300); x.lineTo(180, 296); x.lineTo(182, 270);
+      x.lineTo(272, 262); x.lineTo(270, 236); x.quadraticCurveTo(232, 200, 236, 140); x.quadraticCurveTo(244, 74, 300, 70);
+    });
+    // skirt pattern for some texture
+    x.save(); x.beginPath(); x.moveTo(262, 420); x.lineTo(376, 420); x.lineTo(410, 640); x.lineTo(392, 700); x.lineTo(230, 700); x.lineTo(240, 420); x.closePath(); x.clip();
+    x.lineWidth = 2; for (let k = -400; k < 400; k += 18) { x.beginPath(); x.moveTo(200 + k, 420); x.lineTo(460 + k, 720); x.stroke(); }
+    x.restore();
+    x.beginPath(); x.moveTo(250, 420); x.lineTo(382, 420); x.stroke();
+    x.beginPath(); x.arc(342, 140, 6, 0, Math.PI * 2); x.fillStyle = '#111'; x.fill();
+    hole(192, 283); hole(420, 283);
+    // arm pieces: upper arms with two holes, forearms with a hand and one hole
+    for (const ax of [70, 540]) {
+      shape(() => { x.roundRect(ax - 18, 110, 36, 220, 18); });
+      hole(ax, 132); hole(ax, 308);
+      shape(() => {
+        x.moveTo(ax - 16, 420); x.arcTo(ax - 16, 400, ax, 400, 16); x.arcTo(ax + 16, 400, ax + 16, 420, 16);
+        x.lineTo(ax + 14, 620); x.quadraticCurveTo(ax + 40, 650, ax + 30, 690); x.quadraticCurveTo(ax + 4, 700, ax - 6, 668);
+        x.quadraticCurveTo(ax - 22, 650, ax - 14, 620);
+      });
+      hole(ax, 422);
+      x.beginPath(); x.ellipse(ax, 560, 20, 7, 0, 0, Math.PI * 2); x.stroke();
+    }
+    return c.toDataURL('image/png');
+  }
+
+  // ---------- view ----------
+
+  function fit() {
+    const r = canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.max(1, Math.round(r.width * dpr));
+    canvas.height = Math.max(1, Math.round(r.height * dpr));
+    if (!S.sheet) return;
+    const pad = 24;
+    const s = Math.min((r.width - pad * 2) / S.sheet.w, (r.height - pad * 2) / S.sheet.h);
+    S.view = { s, ox: (r.width - S.sheet.w * s) / 2, oy: (r.height - S.sheet.h * s) / 2 };
+  }
+  const toImg = e => {
+    const r = canvas.getBoundingClientRect(), { s, ox, oy } = S.view;
+    return [(e.clientX - r.left - ox) / s, (e.clientY - r.top - oy) / s];
+  };
+  const toScr = ([x, y]) => [x * S.view.s + S.view.ox, y * S.view.s + S.view.oy];
+  const clampPt = ([x, y]) => [Math.max(0, Math.min(S.sheet.w, x)), Math.max(0, Math.min(S.sheet.h, y))];
+  const token = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+  function checker(a, b) {
+    const t = document.createElement('canvas'); t.width = t.height = 16;
+    const x = t.getContext('2d');
+    x.fillStyle = a; x.fillRect(0, 0, 16, 16);
+    x.fillStyle = b; x.fillRect(0, 0, 8, 8); x.fillRect(8, 8, 8, 8);
+    return ctx.createPattern(t, 'repeat');
+  }
+
+  function tracePoly(pts) {
+    ctx.beginPath();
+    pts.forEach((p, i) => { const [sx, sy] = toScr(p); i ? ctx.lineTo(sx, sy) : ctx.moveTo(sx, sy); });
+  }
+
+  function label(text, [sx, sy]) {
+    ctx.font = '500 11px "IBM Plex Mono", ui-monospace, monospace';
+    const w = ctx.measureText(text).width + 10;
+    ctx.fillStyle = token('--panel'); ctx.globalAlpha = .9;
+    ctx.fillRect(sx - w / 2, sy - 9, w, 18);
+    ctx.globalAlpha = 1; ctx.fillStyle = token('--ink'); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(text, sx, sy);
+  }
+
+  function render() {
+    const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (puppetTab()) { renderRig(); return; }
+    if (!S.sheet) return;
+    const { s, ox, oy } = S.view, w = S.sheet.w * s, h = S.sheet.h * s;
+    const accent = token('--accent');
+    ctx.fillStyle = checker(token('--checker-a'), token('--checker-b'));
+    ctx.fillRect(ox, oy, w, h);
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(S.showOrig ? S.sheet.img : S.processed, ox, oy, w, h);
+
+    // parts already cut from this sheet
+    for (const p of S.parts) {
+      if (p.kind !== 'cut' || p.sheetId !== S.sheet.id || (S.draft && S.draft.editId === p.id)) continue;
+      tracePoly(p.poly); ctx.closePath();
+      ctx.globalAlpha = p.id === S.selected ? .22 : .1; ctx.fillStyle = accent; ctx.fill(); ctx.globalAlpha = 1;
+      ctx.lineWidth = p.id === S.selected ? 2.5 : 1.5; ctx.strokeStyle = accent; ctx.setLineDash([5, 4]); ctx.stroke(); ctx.setLineDash([]);
+      const c = p.poly.reduce((a, q) => [a[0] + q[0] / p.poly.length, a[1] + q[1] / p.poly.length], [0, 0]);
+      label(p.name, toScr(c));
+    }
+
+    // the outline being drawn
+    const d = S.draft;
+    if (d && d.pts.length) {
+      tracePoly(d.pts);
+      if (d.closed) { ctx.closePath(); ctx.globalAlpha = .18; ctx.fillStyle = accent; ctx.fill(); ctx.globalAlpha = 1; }
+      else if (S.cursor) { const [cx, cy] = toScr(S.cursor); ctx.lineTo(cx, cy); }
+      ctx.lineWidth = 2; ctx.strokeStyle = accent; ctx.stroke();
+      d.pts.forEach((p, i) => {
+        const [sx, sy] = toScr(p);
+        const closable = !d.closed && i === 0 && d.pts.length >= 3;
+        ctx.beginPath(); ctx.arc(sx, sy, closable ? 7 : 4.5, 0, Math.PI * 2);
+        ctx.fillStyle = closable ? accent : token('--panel'); ctx.fill();
+        ctx.lineWidth = 2; ctx.strokeStyle = accent; ctx.stroke();
+      });
+    }
+  }
+
+  // ---------- drawing outlines ----------
+
+  function nearPoint(e) {
+    if (!S.draft) return -1;
+    const r = canvas.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+    let best = -1, bd = HIT;
+    S.draft.pts.forEach((p, i) => { const [sx, sy] = toScr(p), dd = Math.hypot(sx - mx, sy - my); if (dd <= bd) { bd = dd; best = i; } });
+    return best;
+  }
+
+  canvas.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    if (puppetTab()) { rigDown(e); return; }
+    if (!S.sheet) return;
+    const i = nearPoint(e);
+    if (S.draft && i >= 0) {
+      if (!S.draft.closed && i === 0 && S.draft.pts.length >= 3) { closeDraft(); return; }
+      S.drag = i; canvas.setPointerCapture(e.pointerId); return;
+    }
+    if (S.draft && S.draft.closed) return;
+    const p = clampPt(toImg(e));
+    if (!S.draft) S.draft = { pts: [], closed: false, editId: null };
+    S.draft.pts.push(p);
+    refresh();
+  });
+  canvas.addEventListener('pointermove', e => {
+    if (puppetTab()) { rigMove(e); return; }
+    if (!S.sheet) return;
+    if (S.drag !== null && S.draft) { S.draft.pts[S.drag] = clampPt(toImg(e)); render(); return; }
+    S.cursor = clampPt(toImg(e));
+    canvas.classList.toggle('grab', nearPoint(e) >= 0);
+    if (S.draft && !S.draft.closed) render();
+  });
+  canvas.addEventListener('pointerup', () => { S.drag = null; rigUp(); });
+  canvas.addEventListener('pointerleave', () => { S.cursor = null; render(); });
+  canvas.addEventListener('dblclick', () => {
+    if (puppetTab()) return;
+    const d = S.draft;
+    if (!d || d.closed) return;
+    // a double-click lands two points on the same spot: keep one
+    while (d.pts.length > 1) {
+      const a = d.pts[d.pts.length - 1], b = d.pts[d.pts.length - 2];
+      if (Math.hypot(a[0] - b[0], a[1] - b[1]) * S.view.s < 4) d.pts.pop(); else break;
+    }
+    if (d.pts.length >= 3) closeDraft();
+  });
+
+  function closeDraft() {
+    S.draft.closed = true;
+    S.cursor = null;
+    const editing = S.draft.editId && S.parts.find(p => p.id === S.draft.editId);
+    $('partName').value = editing ? editing.name : '';
+    $('savePart').textContent = editing ? 'Update part' : 'Save part';
+    refresh();
+    $('partName').focus();
+  }
+  function cancelDraft() { S.draft = null; refresh(); }
+
+  $('nameForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const d = S.draft;
+    if (!d || !d.closed) return;
+    const name = $('partName').value.trim() || `part ${S.parts.length + 1}`;
+    let part = d.editId && S.parts.find(p => p.id === d.editId);
+    if (part) { part.poly = d.pts.map(p => p.slice()); part.name = name; }
+    else { part = { id: newId('p'), name, kind: 'cut', sheetId: S.sheet.id, poly: d.pts.map(p => p.slice()) }; S.parts.push(part); }
+    extract(part);
+    // parts that fill in where others overlap them need redoing when an outline changes
+    S.parts.filter(q => q !== part && q.kind === 'cut' && q.sheetId === S.sheet.id && q.smooth && q.smooth.fill).forEach(extract);
+    S.selected = part.id;
+    S.draft = null;
+    refresh();
+  });
+  $('cancelDraft').addEventListener('click', cancelDraft);
+
+  document.addEventListener('keydown', e => {
+    const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName);
+    if ((e.metaKey || e.ctrlKey) && !typing && (e.key === 'z' || e.key === 'Z' || e.key === 'y')) {
+      e.preventDefault();
+      if (S.draft && !S.draft.closed && e.key === 'z' && !e.shiftKey) {
+        S.draft.pts.pop(); if (!S.draft.pts.length) S.draft = null; refresh(); return;
+      }
+      if (e.key === 'y' || e.shiftKey) redo(); else undo();
+      return;
+    }
+    if (e.key === 'Escape' && S.join) { S.join = null; refresh(); return; }
+    if (!typing && puppetTab() && /^[1-9]$/.test(e.key) && S.sel.size === 1) {
+      const p = byId([...S.sel][0]), n = +e.key - 1;
+      if (p && p.rig && n < stampCount(p)) { p.rig.v = n; refresh(); return; }
+    }
+    if (e.key === ' ' && S.tab === 'move' && !typing) { e.preventDefault(); if (S.rec) stopRec(); else if (S.playing) stopPlay(); else startPlay(); return; }
+    if (e.key === 'Escape' && S.draft) { cancelDraft(); return; }
+    if (typing || !S.draft || S.draft.closed) return;
+    if (e.key === 'Enter' && S.draft.pts.length >= 3) { e.preventDefault(); closeDraft(); }
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      e.preventDefault();
+      S.draft.pts.pop();
+      if (!S.draft.pts.length) S.draft = null;
+      refresh();
+    }
+  });
+
+  // ---------- parts list ----------
+
+  function editOutline(part) {
+    S.draft = { pts: part.poly.map(p => p.slice()), closed: false, editId: part.id };
+    closeDraft();
+  }
+
+  function renderList() {
+    const list = $('partsList');
+    list.textContent = '';
+    $('partCount').textContent = S.parts.length ? `${S.parts.length}` : '';
+    if (!S.parts.length) {
+      const e = document.createElement('div');
+      e.className = 'empty';
+      e.textContent = 'No parts yet. Click around a piece on the sheet to cut it out, or upload separate part images. Parts are separate pieces: an arm that bends at the elbow is two parts.';
+      list.append(e);
+      return;
+    }
+    if (puppetTab()) S.parts.forEach(ensureRig);
+    for (const p of [...S.parts].reverse()) {     // front-most piece at the top
+      const row = document.createElement('div');
+      row.className = 'part' + ((puppetTab() ? S.sel.has(p.id) : p.id === S.selected) ? ' selected' : '');
+      const th = document.createElement('div');
+      th.className = 'thumb'; th.title = puppetTab() ? 'Select' : 'Show on sheet';
+      const im = document.createElement('img'); im.src = p.url; im.alt = p.name;
+      th.append(im);
+      th.addEventListener('click', e => {
+        if (puppetTab()) {
+          if (e.shiftKey || e.metaKey || e.ctrlKey) { if (S.sel.has(p.id)) S.sel.delete(p.id); else S.sel.add(p.id); }
+          else S.sel = S.sel.size === 1 && S.sel.has(p.id) ? new Set() : new Set([p.id]);
+          S.selected = S.sel.has(p.id) ? p.id : null;
+        } else S.selected = S.selected === p.id ? null : p.id;
+        refresh();
+      });
+
+      const body = document.createElement('div'); body.className = 'part-body';
+      const name = document.createElement('input');
+      name.type = 'text'; name.value = p.name; name.id = 'name-' + p.id; name.setAttribute('list', 'nameSuggestions');
+      name.setAttribute('aria-label', 'Part name');
+      name.addEventListener('change', () => { p.name = name.value.trim() || p.name; name.value = p.name; render(); persist(); });
+      const meta = document.createElement('div'); meta.className = 'meta';
+      const size = p.canvas ? `${p.canvas.width}×${p.canvas.height} px` : '';
+      const from = sheetById(p.sheetId);
+      meta.textContent = p.kind === 'cut' ? `cut from ${from ? (from.example ? 'example sheet' : from.name) : 'a removed sheet'} · ${size}` : p.kind === 'stamp' ? `split from stamps · ${size}` : `uploaded · ${size}`;
+
+      const acts = document.createElement('div'); acts.className = 'row-actions';
+      let stampRow = null;
+      if (puppetTab() && stampCount(p) > 1) {
+        const st = document.createElement('div'); st.className = 'row-actions';
+        const lab = document.createElement('span'); lab.className = 'attach'; lab.textContent = 'Stamp';
+        st.append(lab);
+        for (let i = 0; i < stampCount(p); i++) {
+          const b = document.createElement('button'); b.type = 'button'; b.textContent = i + 1; b.className = 'chip';
+          b.setAttribute('aria-pressed', String((p.rig.v || 0) === i));
+          b.title = i === 0 ? p.name : (p.variants[i - 1].name || `stamp ${i + 1}`);
+          b.addEventListener('click', () => { p.rig.v = i; refresh(); });
+          st.append(b);
+        }
+        if (S.tab === 'rig') {
+          const sp = document.createElement('button'); sp.type = 'button'; sp.textContent = 'Split stamps';
+          sp.title = 'Turn each stamp back into its own piece';
+          sp.addEventListener('click', () => splitStamps(p));
+          st.append(sp);
+        }
+        if (S.tab === 'rig' && (p.rig.v || 0) > 0) {
+          const rm = document.createElement('button'); rm.type = 'button'; rm.textContent = 'Remove this stamp';
+          rm.addEventListener('click', () => armed(rm, true, 'Confirm remove', () => { p.variants.splice(p.rig.v - 1, 1); p.rig.v = 0; refresh(); }));
+          st.append(rm);
+        }
+        stampRow = st;
+      }
+      if (puppetTab()) {
+        const fr = document.createElement('button'); fr.type = 'button'; fr.textContent = 'Front';
+        fr.title = 'Put this piece, and anything attached to it, in front of everything else';
+        fr.addEventListener('click', () => { layerGroup(p, true); refresh(); });
+        const bh = document.createElement('button'); bh.type = 'button'; bh.textContent = 'Behind';
+        bh.title = 'Put this piece, and anything attached to it, behind everything else';
+        bh.addEventListener('click', () => { layerGroup(p, false); refresh(); });
+        acts.append(fr, bh);
+      }
+      if (S.tab === 'rig') {
+        const lab = document.createElement('label'); lab.className = 'attach'; lab.textContent = 'on';
+        const sel = document.createElement('select'); sel.id = 'parent-' + p.id; sel.setAttribute('aria-label', 'Attached to');
+        sel.append(new Option('nothing (main piece)', ''));
+        for (const q of S.parts) if (q !== p && !isAncestor(p, q)) { const o = new Option(q.name, q.id); o.selected = p.rig.parent === q.id; sel.append(o); }
+        sel.addEventListener('change', () => { attachInPlace(p, sel.value ? byId(sel.value) : null); refresh(); });
+        lab.append(sel);
+        const i = S.parts.indexOf(p);
+        const fwd = document.createElement('button'); fwd.type = 'button'; fwd.textContent = 'Forward'; fwd.disabled = i === S.parts.length - 1;
+        fwd.title = 'Bring this piece in front of the one above it';
+        fwd.addEventListener('click', () => { S.parts.splice(i, 1); S.parts.splice(i + 1, 0, p); refresh(); });
+        const back = document.createElement('button'); back.type = 'button'; back.textContent = 'Back'; back.disabled = i === 0;
+        back.title = 'Send this piece behind the one below it';
+        back.addEventListener('click', () => { S.parts.splice(i, 1); S.parts.splice(i - 1, 0, p); refresh(); });
+        acts.append(lab, fwd, back);
+      }
+      let smoothBox = null;
+      if (S.tab === 'rig' && p.kind !== 'stamp') {
+        smoothBox = document.createElement('details'); smoothBox.className = 'smooth';
+        smoothBox.open = S.openSmooth.has(p.id);
+        smoothBox.addEventListener('toggle', () => { smoothBox.open ? S.openSmooth.add(p.id) : S.openSmooth.delete(p.id); });
+        const sum = document.createElement('summary'); sum.textContent = 'Smoothing';
+        smoothBox.append(sum);
+        const sm = p.smooth || {};
+        const redo = () => {
+          if (p.kind === 'cut') extract(p);
+          else if (p.kind === 'upload') processUpload(p);
+          refresh();
+        };
+        const slider = (label, key, max, help) => {
+          const wrap = document.createElement('label'); wrap.className = 'field'; wrap.title = help;
+          const top = document.createElement('span'); top.textContent = `${label}: ${sm[key] || 0} px`;
+          const inp = document.createElement('input'); inp.type = 'range'; inp.min = 0; inp.max = max; inp.step = 1; inp.value = sm[key] || 0; inp.id = `${key}-${p.id}`;
+          inp.addEventListener('input', () => { top.textContent = `${label}: ${inp.value} px`; });
+          inp.addEventListener('change', () => { p.smooth = { ...(p.smooth || {}), [key]: +inp.value }; redo(); });
+          wrap.append(top, inp);
+          return wrap;
+        };
+        smoothBox.append(slider('Joint cap', 'joint', 60, 'Grows a rounded cap of this piece’s own texture around its joint, so no gap opens when it turns'));
+        if (p.kind === 'cut' && sheetById(p.sheetId)) {
+          smoothBox.append(slider('Ragged cut edge', 'rough', 8, 'Breaks up straight cut lines so they look printed'));
+          const fl = document.createElement('label'); fl.className = 'check';
+          const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!sm.fill; cb.id = `fill-${p.id}`;
+          cb.addEventListener('change', () => { p.smooth = { ...(p.smooth || {}), fill: cb.checked }; redo(); });
+          fl.append(cb, document.createTextNode(' Fill where other parts were cut out of it'));
+          fl.title = 'For a body with an arm drawn over it: rebuilds the area under the arm from the body’s own texture';
+          smoothBox.append(fl);
+        }
+      }
+      if (S.tab === 'cut' && p.kind === 'cut' && sheetById(p.sheetId)) {
+        const ed = document.createElement('button'); ed.type = 'button'; ed.textContent = 'Edit outline';
+        ed.addEventListener('click', () => { if (S.sheet.id !== p.sheetId) showSheet(sheetById(p.sheetId)); editOutline(p); });
+        acts.append(ed);
+      }
+      if (S.tab === 'cut' && p.kind === 'upload') {
+        const sel = document.createElement('select'); sel.id = 'mode-' + p.id; sel.setAttribute('aria-label', 'Background');
+        [['outside', 'Remove outside paper'], ['ink', 'Ink only'], ['keep', 'Keep all']].forEach(([v, t]) => { const o = new Option(t, v); o.selected = p.mode === v; sel.append(o); });
+        sel.addEventListener('change', () => { p.mode = sel.value; processUpload(p); refresh(); });
+        acts.append(sel);
+      }
+      const del = document.createElement('button'); del.type = 'button'; del.textContent = 'Delete';
+      del.addEventListener('click', () => {
+        if (del.dataset.armed) {
+          S.parts.filter(q => q.rig && q.rig.parent === p.id).forEach(q => attachInPlace(q, null));
+          S.parts = S.parts.filter(q => q !== p);
+          if (S.join && S.join.childId === p.id) S.join = null;
+          if (S.draft && S.draft.editId === p.id) S.draft = null;
+          refresh();
+          return;
+        }
+        del.dataset.armed = '1'; del.textContent = 'Confirm delete'; del.classList.add('danger');
+        setTimeout(() => { if (del.isConnected) { delete del.dataset.armed; del.textContent = 'Delete'; del.classList.remove('danger'); } }, 3000);
+      });
+      acts.append(del);
+
+      body.append(name, meta, acts);
+      if (stampRow) body.append(stampRow);
+      if (smoothBox) body.append(smoothBox);
+      row.append(th, body);
+      list.append(row);
+    }
+  }
+
+  // ---------- movements ----------
+  // A pose stores each piece's angle (and, for the main piece, where it is): {partId: [angle, x?, y?]}
+
+  const curMove = () => S.moves.find(m => m.id === S.moveId) || null;
+
+  function capturePose() {
+    const pose = { _order: S.parts.map(p => p.id) };   // which pieces are in front, back to front
+    for (const p of S.parts) if (p.rig) pose[p.id] = p.rig.parent ? [p.rig.angle, p.rig.v || 0] : [p.rig.angle, p.rig.pos[0], p.rig.pos[1], p.rig.v || 0];
+    return pose;
+  }
+  function applyOrder(order) {
+    const rank = new Map(order.map((id, i) => [id, i]));
+    S.parts.sort((a, b) => (rank.has(a.id) ? rank.get(a.id) : 1e9) - (rank.has(b.id) ? rank.get(b.id) : 1e9));
+  }
+  // send a piece and everything attached to it in front of (or behind) all other pieces
+  function layerGroup(p, front) {
+    const group = S.parts.filter(q => q === p || isAncestor(p, q));
+    const rest = S.parts.filter(q => !group.includes(q));
+    S.parts = front ? rest.concat(group) : group.concat(rest);
+  }
+  function applyPose(pose, only = null) {
+    if (pose._order && !only) applyOrder(pose._order);
+    for (const p of S.parts) {
+      const v = pose[p.id];
+      if (!v || !p.rig || (only && !only(p))) continue;
+      p.rig.angle = v[0];
+      if (!p.rig.parent && v.length >= 3) { p.rig.pos = [v[1], v[2]]; if (v.length === 4) p.rig.v = Math.min(v[3], stampCount(p) - 1); }
+      if (p.rig.parent && v.length === 2) p.rig.v = Math.min(v[1], stampCount(p) - 1);
+    }
+  }
+
+  // ---- in-betweens: frames generated between your frames, with easing and an arc ----
+  const easeFns = {
+    linear: t => t,
+    inout: t => t < .5 ? 2 * t * t : 1 - (-2 * t + 2) ** 2 / 2,
+    in: t => t * t,
+    out: t => 1 - (1 - t) ** 2,
+  };
+  const rot = ([x, y], deg) => { const a = deg * Math.PI / 180, c = Math.cos(a), s2 = Math.sin(a); return [x * c - y * s2, x * s2 + y * c]; };
+  // the centre of the stamp a piece shows, measured from its joint
+  function stampCentre(p, v) {
+    const f = faceOf(p, v);
+    return [f.dx + f.canvas.width / 2 - p.rig.pivot[0], f.dy + f.canvas.height / 2 - p.rig.pivot[1]];
+  }
+  function tween(A, B, e, arc) {
+    const out = { _order: A._order };
+    for (const id in A) {
+      if (id === '_order') continue;
+      const a = A[id], b = B[id], p = byId(id);
+      if (!b || !p || !p.rig || a.length !== b.length) { out[id] = a; continue; }
+      const da = ((b[0] - a[0]) % 360 + 540) % 360 - 180;   // turn the short way round
+      const ang = a[0] + da * e;
+      if (a.length < 3) { out[id] = [ang, a[1] || 0]; continue; }
+      // a main piece: carry the stamp it shows from where it sits in A to where B's stamp sits, along a curve
+      const oA = stampCentre(p, a[3] || 0), oB = stampCentre(p, b[3] || 0);
+      const rA = rot(oA, a[0]), rB = rot(oB, b[0]);
+      const VA = [a[1] + rA[0], a[2] + rA[1]], VB = [b[1] + rB[0], b[2] + rB[1]];
+      const mid = [(VA[0] + VB[0]) / 2 - (VB[1] - VA[1]) * arc * .5, (VA[1] + VB[1]) / 2 + (VB[0] - VA[0]) * arc * .5];
+      const u = 1 - e;
+      const V = [u * u * VA[0] + 2 * u * e * mid[0] + e * e * VB[0], u * u * VA[1] + 2 * u * e * mid[1] + e * e * VB[1]];
+      const r2 = rot(oA, ang);
+      out[id] = [ang, V[0] - r2[0], V[1] - r2[1], a[3] || 0];
+    }
+    return out;
+  }
+  // the frames that actually play: your frames, with in-betweens filled in for pose-by-pose movements
+  function playlist(m) {
+    const n = m.frames.length, k = m.kind === 'poses' && n > 1 ? (m.inb || 0) : 0;
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      out.push({ pose: m.frames[i], kf: i });
+      for (let j = 1; j <= k; j++) out.push({ pose: tween(m.frames[i], m.frames[(i + 1) % n], easeFns[m.ease || 'inout']((j) / (k + 1)), m.arc || 0), kf: i });
+    }
+    return out;
+  }
+  const stepSecs = m => frameSecs(m) / (m.kind === 'poses' && m.frames.length > 1 ? (m.inb || 0) + 1 : 1);
+
+  function newMove(kind = 'poses') {
+    const n = S.moves.length + 1;
+    const m = { id: newId('m'), name: kind === 'live' ? `Take ${n}` : `Movement ${n}`, kind, frames: [], unit: 'secs', secs: 0.5, bpm: 152.5, beats: 2, speed: 1, inb: 0, ease: 'inout', arc: 0 };
+    S.moves.push(m); S.moveId = m.id; S.frame = 0;
+    return m;
+  }
+  function frameSecs(m) {
+    if (m.kind === 'live') return 1 / LIVE_FPS / m.speed;
+    return m.unit === 'bpm' ? m.beats * 60 / m.bpm : m.secs;
+  }
+  function selectFrame(i) {
+    const m = curMove();
+    if (!m || !m.frames.length) return;
+    S.frame = Math.max(0, Math.min(m.frames.length - 1, i));
+    applyPose(m.frames[S.frame]);
+    renderMoveUI(); render(); persist();
+  }
+
+  // playback
+  let raf = 0;
+  function startPlay() {
+    const m = curMove();
+    if (!m || m.frames.length < 1) return;
+    S.playing = true;
+    const list = playlist(m), step = stepSecs(m);
+    let shown = Math.max(0, list.findIndex(x => x.kf === S.frame));
+    const t0 = performance.now() - shown * step * 1000;
+    const tick = now => {
+      if (!S.playing) return;
+      const i = Math.floor((now - t0) / 1000 / step) % list.length;
+      if (i !== shown) { shown = i; S.frame = list[i].kf; applyPose(list[i].pose); render(); renderStripPos(); }
+      raf = requestAnimationFrame(tick);
+    };
+    applyPose(list[shown].pose);
+    raf = requestAnimationFrame(tick);
+    renderMoveUI(); render();
+  }
+  function stopPlay() { S.playing = false; cancelAnimationFrame(raf); renderMoveUI(); render(); persist(); }
+
+  // live recording: samples the pose LIVE_FPS times a second while you drag.
+  // Recording again on a live take plays it back and only replaces the pieces you touch.
+  function startRec() {
+    if (S.playing) stopPlay();
+    let m = curMove();
+    const overdub = m && m.kind === 'live' && m.frames.length > 0;
+    if (!overdub) m = newMove('live');
+    S.rec = { m, base: overdub ? m.frames.slice() : null, touched: new Set(), frames: [], t0: performance.now() };
+    if (overdub) applyPose(m.frames[0]);
+    const tick = now => {
+      const R = S.rec;
+      if (!R) return;
+      const want = Math.floor((now - R.t0) / 1000 * LIVE_FPS) + 1;
+      while (R.frames.length < want) {
+        const i = R.frames.length;
+        if (R.base && i >= R.base.length) { stopRec(); return; }
+        if (!R.base && i >= LIVE_FPS * 120) { stopRec(); return; }   // two-minute limit
+        if (R.base) applyPose(R.base[i], p => !R.touched.has(p.id));
+        const pose = R.base ? { ...R.base[i] } : {};
+        const live = capturePose();
+        for (const id in live) if (!R.base || R.touched.has(id)) pose[id] = live[id];
+        R.frames.push(pose);
+      }
+      S.frame = R.frames.length - 1;
+      render(); renderStripPos();
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    refresh();
+  }
+  function stopRec() {
+    const R = S.rec;
+    if (!R) return;
+    cancelAnimationFrame(raf);
+    S.rec = null;
+    R.m.frames = R.base ? R.frames.concat(R.base.slice(R.frames.length)) : R.frames;
+    S.frame = 0;
+    if (R.m.frames.length) applyPose(R.m.frames[0]);
+    refresh();
+  }
+
+  function renderStripPos() {
+    const m = curMove();
+    const range = $('strip').querySelector('input[type="range"]');
+    if (range) { range.value = S.frame; const lab = $('strip').querySelector('.note'); if (lab) lab.textContent = `${S.frame + 1} / ${S.rec ? S.frame + 1 : m.frames.length}`; return; }
+    $('strip').querySelectorAll('.chip').forEach((c, i) => c.setAttribute('aria-current', String(i === S.frame)));
+  }
+
+  function renderMoveUI() {
+    const m = curMove(), hint = $('hint');
+    const sel = $('moveSel'); sel.textContent = '';
+    S.moves.forEach(x => { const o = new Option(x.name, x.id); o.selected = x.id === S.moveId; sel.append(o); });
+    $('moveName').value = m ? m.name : '';
+    $('delMove').disabled = !m;
+    $('onion').checked = S.onion; $('showJoints2').checked = S.showJoints;
+    const live = m && m.kind === 'live';
+    $('poseTools').hidden = live; $('liveTools').hidden = !live;
+    $('playBtn').textContent = S.playing ? 'Stop' : 'Play';
+    $('exportBtn').disabled = !m || !m.frames.length || !!S.rec;
+    $('playBtn').disabled = !m || !m.frames.length || !!S.rec;
+    $('recBtn').textContent = S.rec ? 'Stop recording' : live && m.frames.length ? 'Record over' : 'Record';
+    $('recBtn').classList.toggle('on', !!S.rec);
+    if (m && !live) {
+      $('timeUnit').value = m.unit; $('secsIn').value = m.secs; $('bpmIn').value = m.bpm; $('beatsIn').value = m.beats;
+      $('secsIn').hidden = m.unit !== 'secs'; $('bpmBox').hidden = m.unit !== 'bpm';
+      $('replaceFrame').disabled = $('deleteFrame').disabled = !m.frames.length;
+      $('inbIn').value = m.inb || 0; $('easeSel').value = m.ease || 'inout'; $('arcIn').value = Math.round((m.arc || 0) * 100);
+      $('easeSel').disabled = $('arcIn').disabled = !(m.inb > 0);
+    }
+    if (live) { $('liveInfo').textContent = `Recorded live · ${(m.frames.length / LIVE_FPS).toFixed(1)} s`; $('speedSel').value = String(m.speed); }
+
+    // frame strip
+    const strip = $('strip'); strip.textContent = '';
+    if (!m) return;
+    if (live || S.rec) {
+      const n = S.rec ? Math.max(1, S.rec.frames.length) : m.frames.length;
+      const range = document.createElement('input'); range.type = 'range'; range.min = 0; range.max = Math.max(0, n - 1); range.value = S.frame; range.id = 'scrub';
+      range.setAttribute('aria-label', 'Scrub'); range.disabled = !!S.rec || !m.frames.length;
+      range.addEventListener('input', () => { if (S.playing) stopPlay(); selectFrame(+range.value); });
+      const lab = document.createElement('span'); lab.className = 'note'; lab.textContent = `${S.frame + 1} / ${n}`;
+      strip.append(range, lab);
+    } else if (!m.frames.length) {
+      const e = document.createElement('span'); e.className = 'note';
+      e.textContent = 'No frames yet. Drag the pieces into a pose, then Add frame. Repeat for each pose.';
+      strip.append(e);
+    } else {
+      m.frames.forEach((_, i) => {
+        const c = document.createElement('button'); c.type = 'button'; c.className = 'chip'; c.textContent = i + 1;
+        c.setAttribute('aria-current', String(i === S.frame)); c.setAttribute('aria-label', `Frame ${i + 1}`);
+        c.addEventListener('click', () => { if (S.playing) stopPlay(); selectFrame(i); });
+        strip.append(c);
+      });
+      const t = document.createElement('span'); t.className = 'note';
+      t.textContent = `· ${m.frames.length} frames · ${(m.frames.length * frameSecs(m)).toFixed(2)} s loop`;
+      strip.append(t);
+    }
+
+    if (S.rec) hint.innerHTML = S.rec.base ? 'Recording over the take: drag the pieces you want to change; the rest keep playing · <kbd>Space</kbd> stops' : 'Recording: drag the pieces · <kbd>Space</kbd> stops';
+    else if (S.playing) hint.innerHTML = 'Playing on a loop · <kbd>Space</kbd> or drag a piece to stop';
+    else if (live) hint.textContent = 'Record over plays this take back and replaces only the pieces you drag. Scrub to look through it.';
+    else hint.innerHTML = 'Drag pieces into a pose · <kbd>1</kbd>–<kbd>9</kbd> pick a stamp for the selected piece · <kbd>Shift</kbd>-click to select several · then Add frame (or Replace) · <kbd>Space</kbd> plays';
+  }
+
+  // ---------- footer + controls ----------
+
+  function renderFooter() {
+    const d = S.draft, hint = $('hint'), form = $('nameForm');
+    const rig = S.tab === 'rig';
+    document.querySelectorAll('#tabSeg button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === S.tab)));
+    document.querySelectorAll('#toolSeg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === S.tool)));
+    const mv = S.tab === 'move';
+    $('cutTools').hidden = S.tab !== 'cut'; $('rigTools').hidden = !rig; $('moveTools').hidden = !mv;
+    $('combineBtn').hidden = !(rig && S.tool === 'move' && [...S.sel].filter(id => byId(id)).length >= 2);
+    $('stepLabel').textContent = mv ? 'Move' : rig ? 'Rig' : 'Cut parts';
+    $('leftBox').setAttribute('aria-label', puppetTab() ? 'Puppet' : 'Sheet');
+    form.hidden = puppetTab() || !(d && d.closed);
+    $('transport').hidden = !mv; $('strip').hidden = !mv;
+    if (!mv) $('exportPanel').hidden = true;
+    if (mv) { renderMoveUI(); return; }
+    if (rig) {
+      const name = id => (byId(id) || {}).name;
+      if (!S.parts.length) hint.textContent = 'Cut or upload some parts first, then join them here.';
+      else if (S.tool === 'join') hint.innerHTML = S.join
+        ? `Now click where <b>${name(S.join.childId)}</b> attaches on another piece · <kbd>Esc</kbd> cancels`
+        : 'Click the joint on the piece you want to attach (e.g. the hole at the top of an arm).';
+      else if (S.tool === 'pivot') hint.textContent = 'Click on a piece to move its joint there. The piece stays where it is.';
+      else hint.innerHTML = 'Drag a piece to turn it · <kbd>Shift</kbd>-click to select several and turn them together · drag the main piece (square joint) to move the puppet, <kbd>Shift</kbd>-drag to turn it';
+      return;
+    }
+    if (!S.sheet) hint.textContent = 'Open a full image to cut parts from it.';
+    else if (!d) hint.innerHTML = 'Click around a piece to start cutting it out.';
+    else if (!d.closed) hint.innerHTML = 'Click to add points · click the first point or press <kbd>Enter</kbd> to close · <kbd>Backspace</kbd> undoes a point · <kbd>Esc</kbd> cancels';
+    else hint.textContent = 'Drag points to adjust.';
+    hint.hidden = false;
+    document.querySelectorAll('#modeSeg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === S.mode)));
+    const sel = $('sheetSel'); sel.textContent = '';
+    S.sheets.forEach(sh => { const o = new Option(sh.example ? 'example sheet' : sh.name, sh.id); o.selected = sh === S.sheet; sel.append(o); });
+    sel.hidden = S.sheets.length < 2;
+    $('removeSheet').hidden = !S.sheet || (S.sheets.length < 2 && S.sheet.example);
+    $('sheetName').textContent = S.sheet ? (S.sheet.example ? 'example sheet (open your own image to replace it)' : `${S.sheets.length < 2 ? S.sheet.name + ' · ' : ''}${S.sheet.w}×${S.sheet.h} px`) : '';
+  }
+
+  function refresh() { renderFooter(); renderList(); render(); persist(); }
+
+  $('modeSeg').addEventListener('click', e => {
+    const b = e.target.closest('button[data-mode]');
+    if (!b || b.dataset.mode === S.mode) return;
+    S.mode = b.dataset.mode;
+    reprocessSheet();
+    refresh();
+  });
+  $('showOrig').addEventListener('change', e => { S.showOrig = e.target.checked; render(); });
+  $('sheetSel').addEventListener('change', e => { const sh = sheetById(e.target.value); if (sh) showSheet(sh); });
+  $('removeSheet').addEventListener('click', e => armed(e.currentTarget, true, 'Confirm remove', () => {
+    S.sheets = S.sheets.filter(sh => sh !== S.sheet);
+    if (S.sheets.length) showSheet(S.sheets[S.sheets.length - 1]);
+    else setSheet(exampleSheet(), 'example', true);
+  }));
+  $('tabSeg').addEventListener('click', e => {
+    const b = e.target.closest('button[data-tab]');
+    if (!b || b.dataset.tab === S.tab) return;
+    S.tab = b.dataset.tab;
+    S.draft = null; S.join = null; S.rdrag = null; canvas.className = '';
+    if (S.playing) stopPlay();
+    if (S.rec) stopRec();
+    if (puppetTab()) { S.parts.forEach(ensureRig); if (!S.rigFitted) fitRig(); }
+    if (S.tab === 'move' && !S.moves.length) newMove();
+    refresh();
+  });
+  $('toolSeg').addEventListener('click', e => {
+    const b = e.target.closest('button[data-tool]');
+    if (!b) return;
+    S.tool = b.dataset.tool; S.join = null;
+    refresh();
+  });
+  $('showJoints').addEventListener('change', e => { S.showJoints = e.target.checked; render(); });
+  $('resetPose').addEventListener('click', () => { S.parts.forEach(p => { if (p.rig && p.rig.parent) p.rig.angle = p.rig.angle0; }); refresh(); });
+  $('fitView').addEventListener('click', () => { fitRig(); render(); });
+  $('fitView2').addEventListener('click', () => { fitRig(); render(); });
+  $('onion').addEventListener('change', e => { S.onion = e.target.checked; render(); });
+  for (const id of ['mirror', 'mirror2']) $(id).addEventListener('change', e => { S.mirror = e.target.checked; $('mirror').checked = $('mirror2').checked = S.mirror; });
+  $('showJoints2').addEventListener('change', e => { S.showJoints = e.target.checked; $('showJoints').checked = S.showJoints; render(); });
+  $('moveSel').addEventListener('change', e => {
+    if (S.playing) stopPlay();
+    S.moveId = e.target.value; S.frame = 0;
+    const m = curMove(); if (m && m.frames[0]) applyPose(m.frames[0]);
+    refresh();
+  });
+  $('moveName').addEventListener('change', e => { const m = curMove(); if (m) { m.name = e.target.value.trim() || m.name; refresh(); } });
+  $('newMove').addEventListener('click', () => { if (S.playing) stopPlay(); newMove(); refresh(); });
+  $('delMove').addEventListener('click', e => {
+    const b = e.currentTarget;
+    if (!b.dataset.armed) {
+      b.dataset.armed = '1'; b.textContent = 'Confirm delete'; b.classList.add('danger');
+      setTimeout(() => { delete b.dataset.armed; b.textContent = 'Delete'; b.classList.remove('danger'); }, 3000);
+      return;
+    }
+    delete b.dataset.armed; b.textContent = 'Delete'; b.classList.remove('danger');
+    if (S.playing) stopPlay();
+    S.moves = S.moves.filter(m => m.id !== S.moveId);
+    S.moveId = S.moves.length ? S.moves[S.moves.length - 1].id : null; S.frame = 0;
+    if (!S.moves.length) newMove();
+    refresh();
+  });
+  $('playBtn').addEventListener('click', () => { if (S.playing) stopPlay(); else startPlay(); });
+  $('recBtn').addEventListener('click', () => { if (S.rec) stopRec(); else startRec(); });
+  $('addFrame').addEventListener('click', () => {
+    const m = curMove(); if (!m) return;
+    const at = m.frames.length ? S.frame + 1 : 0;
+    m.frames.splice(at, 0, capturePose()); S.frame = at;
+    refresh();
+  });
+  $('replaceFrame').addEventListener('click', () => { const m = curMove(); if (m && m.frames.length) { m.frames[S.frame] = capturePose(); refresh(); } });
+  $('deleteFrame').addEventListener('click', () => {
+    const m = curMove(); if (!m || !m.frames.length) return;
+    m.frames.splice(S.frame, 1);
+    S.frame = Math.min(S.frame, m.frames.length - 1);
+    if (m.frames.length) applyPose(m.frames[Math.max(0, S.frame)]);
+    S.frame = Math.max(0, S.frame);
+    refresh();
+  });
+  $('timeUnit').addEventListener('change', e => { const m = curMove(); if (m) { m.unit = e.target.value; refresh(); } });
+  for (const [id, key, min] of [['secsIn', 'secs', 0.04], ['bpmIn', 'bpm', 20], ['beatsIn', 'beats', 0.25]]) {
+    $(id).addEventListener('change', e => { const m = curMove(); const v = parseFloat(e.target.value); if (m && v >= min) m[key] = v; refresh(); });
+  }
+  $('combineBtn').addEventListener('click', combineStamps);
+  $('inbIn').addEventListener('change', e => { const m = curMove(); if (m) { m.inb = Math.max(0, Math.min(12, Math.round(+e.target.value) || 0)); refresh(); } });
+  $('easeSel').addEventListener('change', e => { const m = curMove(); if (m) { m.ease = e.target.value; refresh(); } });
+  $('arcIn').addEventListener('change', e => { const m = curMove(); if (m) { m.arc = +e.target.value / 100; refresh(); } });
+  $('speedSel').addEventListener('change', e => { const m = curMove(); if (m) { m.speed = parseFloat(e.target.value); refresh(); } });
+  $('openBtn').addEventListener('click', () => $('openFile').click());
+  $('openFile').addEventListener('change', async e => {
+    const f = e.target.files[0]; e.target.value = '';
+    if (f) await setSheet(await readFile(f), f.name);
+  });
+  $('uploadPartsBtn').addEventListener('click', () => $('partFiles').click());
+  $('partFiles').addEventListener('change', async e => {
+    const files = [...e.target.files]; e.target.value = '';
+    const batch = newId('b');
+    for (const f of files) await addUploadedPart(f, batch);
+    refresh();
+  });
+
+  // drag and drop: a full image onto the sheet, part images onto the parts list
+  for (const [box, onDrop] of [
+    [$('leftBox'), async files => { await setSheet(await readFile(files[0]), files[0].name); }],
+    [$('rightBox'), async files => { const batch = newId('b'); for (const f of files) await addUploadedPart(f, batch); refresh(); }],
+  ]) {
+    box.addEventListener('dragover', e => { e.preventDefault(); box.classList.add('drop'); });
+    box.addEventListener('dragleave', e => { if (!box.contains(e.relatedTarget)) box.classList.remove('drop'); });
+    box.addEventListener('drop', async e => {
+      e.preventDefault(); box.classList.remove('drop');
+      const files = [...e.dataTransfer.files].filter(f => f.type.startsWith('image/'));
+      if (files.length) await onDrop(files);
+    });
+  }
+
+  new ResizeObserver(() => { fit(); if (puppetTab()) fitRig(); render(); }).observe($('stage'));
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', render);
+  new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+  // ---------- this browser's copy, between saves ----------
+
+  let saveTimer = null, restoring = true, savedSig = null;
+  S.puppetId = null; S.puppetName = '';
+
+  function serialize() {
+    return {
+      v: 1, name: S.puppetName, mode: S.mode, tab: S.tab, moves: S.moves, moveId: S.moveId,
+      sheets: S.sheets.map(sh => ({ id: sh.id, name: sh.name, example: sh.example, mode: sh.mode, dataURL: sh.example ? null : sh.dataURL })),
+      sheetId: S.sheet && S.sheet.id,
+      parts: S.parts.map(p => ({ id: p.id, name: p.name, kind: p.kind, sheetId: p.sheetId, poly: p.poly, x: p.x, y: p.y, mode: p.mode, orig: p.orig, url: p.url, rig: p.rig, smooth: p.smooth, batch: p.batch,
+        variants: p.variants && p.variants.map(v => ({ url: v.url, dx: v.dx, dy: v.dy, name: v.name })) })),
+    };
+  }
+  // a cheap fingerprint of everything except the images, to tell whether there are unsaved changes
+  const signature = () => JSON.stringify([S.puppetName, S.sheets.map(sh => [sh.id, sh.mode]), S.moves,
+    S.parts.map(p => [p.id, p.name, p.poly, p.mode, p.rig, p.smooth, (p.variants || []).map(v => [v.dx, v.dy, v.url.length]), p.kind === 'upload' ? p.orig.length : 0])]);
+  const isDirty = () => signature() !== savedSig;
+
+  // ---------- undo ----------
+  // Every change that reaches persist() is one step. A step is a snapshot of the puppet; images are
+  // shared, not copied, because a part's image is replaced (never edited) when it changes.
+
+  let undoStack = [], redoStack = [], lastSnap = null, lastSig = null, undoing = false;
+  const clonePart = p => ({ ...p, rig: p.rig && structuredClone(p.rig), poly: p.poly && p.poly.map(q => q.slice()),
+    smooth: p.smooth && { ...p.smooth }, variants: p.variants && p.variants.map(v => ({ ...v })) });
+  const snapshot = () => ({ parts: S.parts.map(clonePart), moves: structuredClone(S.moves), moveId: S.moveId, frame: S.frame,
+    sheets: S.sheets.slice(), sheetModes: S.sheets.map(sh => sh.mode), sheetId: S.sheet && S.sheet.id, puppetName: S.puppetName });
+  function resetHistory() { undoStack = []; redoStack = []; lastSnap = snapshot(); lastSig = signature(); renderUndo(); }
+  function record() {
+    if (undoing || !lastSnap) return;
+    const sig = signature();
+    if (sig === lastSig) return;
+    undoStack.push(lastSnap);
+    if (undoStack.length > 60) undoStack.shift();
+    redoStack = [];
+    lastSnap = snapshot(); lastSig = sig;
+    renderUndo();
+  }
+  function restoreSnap(sn) {
+    undoing = true;
+    if (S.playing) stopPlay();
+    if (S.rec) stopRec();
+    S.parts = sn.parts.map(clonePart);
+    S.moves = structuredClone(sn.moves); S.moveId = sn.moveId; S.frame = sn.frame;
+    S.sheets = sn.sheets.slice(); S.sheets.forEach((sh, i) => { sh.mode = sn.sheetModes[i]; });
+    S.puppetName = sn.puppetName;
+    S.sel = new Set([...S.sel].filter(id => byId(id)));
+    S.draft = null; S.join = null; S.rdrag = null;
+    showSheet(sheetById(sn.sheetId) || S.sheets[S.sheets.length - 1]);
+    lastSnap = snapshot(); lastSig = signature();
+    undoing = false;
+    refresh(); renderUndo();
+  }
+  function undo() { if (!undoStack.length) return; redoStack.push(lastSnap); restoreSnap(undoStack.pop()); }
+  function redo() { if (!redoStack.length) return; undoStack.push(lastSnap); restoreSnap(redoStack.pop()); }
+  function renderUndo() { $('undoBtn').disabled = !undoStack.length; $('redoBtn').disabled = !redoStack.length; }
+  $('undoBtn').addEventListener('click', undo);
+  $('redoBtn').addEventListener('click', redo);
+
+  // The browser copy lives in IndexedDB, which holds far more than localStorage's ~5 MB
+  // (several full-size scans don't fit there). localStorage is only a fallback.
+  const idb = (() => {
+    let opening = null;
+    const open = () => opening || (opening = new Promise((res, rej) => {
+      const q = indexedDB.open('puppet-rig', 1);
+      q.onupgradeneeded = () => q.result.createObjectStore('kv');
+      q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error);
+    }));
+    const tx = async (mode, fn) => { const d = await open(); return new Promise((res, rej) => {
+      const t = d.transaction('kv', mode), q = fn(t.objectStore('kv'));
+      t.oncomplete = () => res(q && q.result); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error);
+    }); };
+    return { get: k => tx('readonly', st => st.get(k)), set: (k, v) => tx('readwrite', st => st.put(v, k)) };
+  })();
+  async function keepCopy(key, text) {
+    try { if (!window.indexedDB) throw 0; await idb.set(key, text); return true; }
+    catch { try { localStorage.setItem(key, text); return true; } catch { return false; } }
+  }
+  async function readCopy(key) {
+    try { if (window.indexedDB) { const v = await idb.get(key); if (v) return v; } } catch { /* fall through */ }
+    try { return localStorage.getItem(key); } catch { return null; }
+  }
+
+  let copyFailed = false;
+  function persist() {
+    if (restoring) return;
+    record();
+    renderFileUI();
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(async () => {
+      const ok = await keepCopy(STORE, JSON.stringify({ ...serialize(), puppetId: S.puppetId, savedSig }));
+      if (ok !== !copyFailed) { copyFailed = !ok; renderFileUI(); }
+    }, 400);
+  }
+
+  async function loadData(data) {
+    restoring = true;
+    if (S.playing) { S.playing = false; cancelAnimationFrame(raf); }
+    if (S.rec) { S.rec = null; cancelAnimationFrame(raf); }
+    Object.assign(S, { parts: [], sheets: [], sheet: null, moves: [], moveId: null, frame: 0, draft: null, join: null, selected: null, sel: new Set(), rigFitted: false, tab: 'cut' });
+    S.puppetName = data.name || '';
+    S.mode = data.mode || 'outside';
+    for (const p of data.parts || []) {
+      const part = { ...p };
+      if (p.variants) part.variants = await Promise.all(p.variants.map(async v => {
+        const im = await loadImage(v.url), c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
+        c.getContext('2d').drawImage(im, 0, 0);
+        return { ...v, canvas: c };
+      }));
+      if (p.kind === 'upload') { part.img = await loadImage(p.orig); processUpload(part); }
+      else { const im = await loadImage(p.url); const c = document.createElement('canvas'); c.width = im.width; c.height = im.height; c.getContext('2d').drawImage(im, 0, 0); part.canvas = c; }
+      S.parts.push(part);
+    }
+    // older saves kept a single sheet
+    const sheets = data.sheets || (data.sheet ? [{ ...data.sheet, mode: data.mode }] : []);
+    for (const sh of sheets) await addSheet(sh.example ? exampleSheet() : sh.dataURL, sh.name, sh.example, sh.id, sh.mode || data.mode);
+    if (!S.sheets.length) await addSheet(exampleSheet(), 'example', true);
+    showSheet(sheetById(data.sheetId) || S.sheets[S.sheets.length - 1]);
+    S.moves = data.moves || []; S.moveId = data.moveId || (S.moves[0] && S.moves[0].id) || null;
+    if (data.tab === 'rig' || data.tab === 'move') { S.tab = data.tab; S.parts.forEach(ensureRig); fitRig(); }
+    if (S.tab === 'move' && !S.moves.length) newMove();
+    const m = curMove(); if (S.tab === 'move' && m && m.frames[0]) applyPose(m.frames[0]);
+    restoring = false;
+    resetHistory();
+  }
+
+  async function restore() {
+    const raw = await readCopy(STORE);
+    let data = null;
+    try { data = JSON.parse(raw || 'null'); } catch { data = null; }
+    try { await loadData(data || {}); S.puppetId = data ? data.puppetId || null : null; savedSig = data && data.savedSig ? data.savedSig : signature(); }
+    catch {
+      // don't let a fresh start overwrite work we couldn't reopen: keep it aside first
+      if (raw) await keepCopy(STORE + '/backup', raw);
+      await loadData({}); savedSig = signature();
+      restoreFailed = true;
+    }
+    refresh();
+  }
+  let restoreFailed = false;
+
+  // ---------- saving to your account ----------
+  // Each person's puppets are private to them: data/users/<their id>/<puppetId> holds the summary,
+  // and the puppet itself (images included) is split across .../<puppetId>/chunks/<n>, because one
+  // stored document can hold at most 256 KB.
+
+  let db = null, uid = null, dbReady = false;
+  const CHUNK = 180000;
+  const note = t => { $('saveNote').textContent = t; };
+
+  function renderFileUI() {
+    const name = $('puppetName');
+    if (document.activeElement !== name) name.value = S.puppetName;
+    const account = !!(db && uid);
+    $('saveBtn').textContent = !dbReady || account ? 'Save' : 'Save file';
+    $('saveBtn').title = account ? 'Save to your account' : 'Download the whole puppet as a file you can open again later';
+    $('puppetsSummary').textContent = !dbReady || account ? 'My puppets' : 'Puppet files';
+    if (!dbReady) return;
+    if (restoreFailed) { note('Couldn’t reopen your last session here, so a copy was kept aside. Open a saved puppet from My puppets.'); return; }
+    if (copyFailed) { note('This browser can’t keep your latest changes. Press Save to keep them.'); return; }
+    if (!db || !uid) note(S.parts.length ? 'Kept in this browser. Use Save file for a copy you can keep.' : '');
+    else if (!S.puppetId) note(S.parts.length ? 'Not saved yet' : '');
+    else if (isDirty()) note('Unsaved changes');
+    else if (S.savedAt) note(`Saved ${S.savedAt}`);
+    else note('');
+  }
+
+  function saveError(e) {
+    const code = e && e.code;
+    if (code === 'not_granted' || code === 'revoked') return 'You can’t save here. Ask the owner to share this page with you as a Contributor.';
+    if (code === 'quota_exceeded') return 'Storage is full. Delete a puppet you no longer need from My puppets, then save again.';
+    if (code === 'invalid_argument') return 'This puppet is too big to save. Try smaller images.';
+    return 'Couldn’t save. Check your connection and try again.';
+  }
+
+  function thumbnail() {
+    const c = document.createElement('canvas'); c.width = 160; c.height = 160;
+    const x = c.getContext('2d');
+    if (S.parts.length && S.parts.every(p => p.rig)) {
+      const bs = S.parts.map(worldBounds);
+      const x0 = Math.min(...bs.map(b => b[0])), y0 = Math.min(...bs.map(b => b[1]));
+      const w = Math.max(...bs.map(b => b[2])) - x0, h = Math.max(...bs.map(b => b[3])) - y0;
+      const k = 150 / Math.max(w, h, 1);
+      for (const p of S.parts) {
+        const m = world(p);
+        x.setTransform(k, 0, 0, k, (160 - w * k) / 2 - x0 * k, (160 - h * k) / 2 - y0 * k);
+        x.transform(m.a, m.b, m.c, m.d, m.e, m.f);
+        drawFace(x, p);
+      }
+    } else if (S.processed) {
+      const k = 150 / Math.max(S.processed.width, S.processed.height);
+      x.drawImage(S.processed, (160 - S.processed.width * k) / 2, (160 - S.processed.height * k) / 2, S.processed.width * k, S.processed.height * k);
+    }
+    const url = c.toDataURL('image/webp', .8);
+    return url.startsWith('data:image/webp') ? url : c.toDataURL('image/png');
+  }
+
+  async function saveToAccount() {
+    if (!db || !uid) return;
+    if (S.playing) stopPlay();
+    if (S.rec) stopRec();
+    $('saveBtn').disabled = true; note('Saving…');
+    try {
+      const pid = S.puppetId || newId('pz');
+      const str = JSON.stringify(serialize());
+      const n = Math.ceil(str.length / CHUNK);
+      const chunks = db.collection(`data/users/${uid}/${pid}/chunks`);
+      for (let i = 0; i < n; i++) await chunks.doc(String(i)).set({ d: str.slice(i * CHUNK, (i + 1) * CHUNK) });
+      const meta = db.collection(`data/users/${uid}`).doc(pid);
+      const old = await meta.get();
+      const oldN = old.exists ? (old.data().chunks || 0) : 0;
+      await meta.set({ kind: 'puppet', name: S.puppetName || 'Untitled puppet', updated: Date.now(), chunks: n, parts: S.parts.length, moves: S.moves.length, thumb: thumbnail() });
+      for (let i = n; i < oldN; i++) await chunks.doc(String(i)).delete();
+      S.puppetId = pid; savedSig = signature();
+      S.savedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      persist(); listPuppets();
+    } catch (e) { note(saveError(e)); $('saveBtn').disabled = false; return; }
+    renderFileUI();
+  }
+
+  async function listPuppets() {
+    const box = $('puppetList');
+    if (!db || !uid) { box.innerHTML = '<div class="empty">Puppets are kept in this browser. Download a puppet file to keep a copy or move it to another computer.</div>'; return; }
+    let docs = [];
+    try { docs = (await db.collection(`data/users/${uid}`).get()).docs.filter(d => d.data().kind === 'puppet'); }
+    catch { box.innerHTML = '<div class="empty">Couldn’t load your puppets. Try again in a moment.</div>'; return; }
+    docs.sort((a, b) => b.data().updated - a.data().updated);
+    box.textContent = '';
+    if (!docs.length) { box.innerHTML = '<div class="empty">No saved puppets yet. Name this one at the top and press Save.</div>'; return; }
+    for (const d of docs) {
+      const v = d.data();
+      const row = document.createElement('div'); row.className = 'saved' + (d.id === S.puppetId ? ' current' : '');
+      const th = document.createElement('div'); th.className = 'thumb';
+      if (v.thumb) { const im = document.createElement('img'); im.src = v.thumb; im.alt = ''; th.append(im); }
+      const body = document.createElement('div'); body.className = 'part-body';
+      const t = document.createElement('div'); t.textContent = v.name; t.style.fontWeight = '500';
+      const m = document.createElement('div'); m.className = 'meta';
+      m.textContent = `${v.parts} parts · ${v.moves} movements · ${new Date(v.updated).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`;
+      const acts = document.createElement('div'); acts.className = 'row-actions';
+      const open = document.createElement('button'); open.type = 'button'; open.textContent = d.id === S.puppetId ? 'Reopen' : 'Open';
+      open.addEventListener('click', () => armed(open, isDirty(), 'Discard changes & open', () => openPuppet(d.id)));
+      const del = document.createElement('button'); del.type = 'button'; del.textContent = 'Delete';
+      del.addEventListener('click', () => armed(del, true, 'Confirm delete', () => deletePuppet(d.id, v.chunks)));
+      acts.append(open, del);
+      body.append(t, m, acts); row.append(th, body); box.append(row);
+    }
+  }
+
+  // two-step buttons (the page can't show confirm dialogs)
+  function armed(btn, needed, label, go) {
+    if (!needed || btn.dataset.armed) { go(); return; }
+    const was = btn.textContent;
+    btn.dataset.armed = '1'; btn.textContent = label; btn.classList.add('danger');
+    setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = was; btn.classList.remove('danger'); } }, 3500);
+  }
+
+  async function openPuppet(pid) {
+    note('Opening…');
+    try {
+      const meta = await db.collection(`data/users/${uid}`).doc(pid).get();
+      const n = meta.data().chunks;
+      const chunks = db.collection(`data/users/${uid}/${pid}/chunks`);
+      const parts = await Promise.all([...Array(n)].map((_, i) => chunks.doc(String(i)).get()));
+      const data = JSON.parse(parts.map(c => c.data().d).join(''));
+      await loadData(data);
+      S.puppetId = pid; savedSig = signature(); S.savedAt = null;
+      $('myPuppets').open = false;
+      refresh(); listPuppets();
+      note(`Opened ${S.puppetName || 'puppet'}`);
+    } catch { note('Couldn’t open that puppet. Try again in a moment.'); }
+  }
+
+  async function deletePuppet(pid, n) {
+    try {
+      const chunks = db.collection(`data/users/${uid}/${pid}/chunks`);
+      for (let i = 0; i < n; i++) await chunks.doc(String(i)).delete();
+      await db.collection(`data/users/${uid}`).doc(pid).delete();
+      if (pid === S.puppetId) { S.puppetId = null; savedSig = null; }
+      listPuppets(); renderFileUI();
+    } catch { note('Couldn’t delete that puppet. Try again in a moment.'); }
+  }
+
+  async function downloadPuppetFile() {
+    try {
+      const blob = new Blob([JSON.stringify({ app: 'puppet-rig', ...serialize() })], { type: 'application/json' });
+      note(await offerFile(`${(S.puppetName || 'puppet').replace(/[\\/:*?"<>|]+/g, ' ').trim()}.puppet.json`, blob));
+    } catch (e) { note(e && e.message ? e.message : 'Couldn’t download the puppet file.'); }
+  }
+  async function openPuppetFileFrom(file) {
+    try {
+      const data = JSON.parse(await file.text());
+      if (data.app !== 'puppet-rig') throw new Error('not a puppet file');
+      await loadData(data);
+      S.puppetId = null; savedSig = signature(); S.savedAt = null;
+      $('myPuppets').open = false;
+      refresh(); note(`Opened ${S.puppetName || 'puppet file'}`);
+    } catch { note('That file isn’t a Puppet Rig puppet file.'); }
+  }
+  $('dlPuppet').addEventListener('click', downloadPuppetFile);
+  $('openPuppetFile').addEventListener('click', e => armed(e.currentTarget, isDirty(), 'Discard changes & open', () => $('puppetFileIn').click()));
+  $('puppetFileIn').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) openPuppetFileFrom(f); });
+  $('saveBtn').addEventListener('click', () => { if (db && uid) saveToAccount(); else downloadPuppetFile(); });
+  $('puppetName').addEventListener('input', e => { S.puppetName = e.target.value.trim(); persist(); });
+  $('newPuppet').addEventListener('click', e => armed(e.currentTarget, isDirty(), 'Discard changes?', async () => {
+    await loadData({}); S.puppetId = null; savedSig = signature(); S.savedAt = null; refresh();
+  }));
+  $('myPuppets').addEventListener('toggle', () => { if ($('myPuppets').open) listPuppets(); });
+  document.addEventListener('click', e => { if ($('myPuppets').open && !$('myPuppets').contains(e.target)) $('myPuppets').open = false; });
+
+  (async () => {
+    const use = window.claude && window.claude.use ? window.claude.use : null;
+    if (use) {
+      try {
+        const [d, u] = await Promise.all([use('db'), use('user')]);
+        db = d; uid = u ? await u.id() : null;
+      } catch { db = null; }
+    }
+    dbReady = true;
+    renderFileUI();
+  })();
+
+  // ---------- export ----------
+
+  const loadScript = src => new Promise((res, rej) => { const el = document.createElement('script'); el.src = src; el.onload = res; el.onerror = rej; document.head.append(el); });
+  const fileName = ext => `${(S.puppetName || 'puppet')} - ${(curMove() || {}).name || 'movement'}`.replace(/[\\/:*?"<>|]+/g, ' ').trim() + '.' + ext;
+
+  function exportLayout(m, maxSide, even) {
+    const now = capturePose();
+    let b = [Infinity, Infinity, -Infinity, -Infinity];
+    for (const { pose: f } of playlist(m)) {
+      applyPose(f);
+      for (const p of S.parts) { const w = worldBounds(p); b = [Math.min(b[0], w[0]), Math.min(b[1], w[1]), Math.max(b[2], w[2]), Math.max(b[3], w[3])]; }
+    }
+    applyPose(now);
+    const pad = Math.max(b[2] - b[0], b[3] - b[1]) * 0.06;
+    const bw = b[2] - b[0] + pad * 2, bh = b[3] - b[1] + pad * 2;
+    const k = maxSide / Math.max(bw, bh);
+    let W = Math.round(bw * k), H = Math.round(bh * k);
+    if (even) { W += W % 2; H += H % 2; }
+    return { W, H, k, ox: (W - (b[2] - b[0]) * k) / 2 - b[0] * k, oy: (H - (b[3] - b[1]) * k) / 2 - b[1] * k };
+  }
+
+  function drawExportFrame(x, L, pose, bg) {
+    applyPose(pose);
+    x.setTransform(1, 0, 0, 1, 0, 0);
+    x.clearRect(0, 0, L.W, L.H);
+    if (bg) { x.fillStyle = bg; x.fillRect(0, 0, L.W, L.H); }
+    x.imageSmoothingQuality = 'high';
+    for (const p of S.parts) {
+      const m = world(p);
+      x.setTransform(L.k, 0, 0, L.k, L.ox, L.oy);
+      x.transform(m.a, m.b, m.c, m.d, m.e, m.f);
+      drawFace(x, p);
+    }
+  }
+
+  async function offerFile(name, blob) {
+    const dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null;
+    if (!dl) {
+      // an ordinary web page (e.g. on GitHub Pages): a plain download link does it
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = name;
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      return 'Downloaded.';
+    }
+    try { await dl.save({ filename: name, data: blob }); return 'Saved to your computer.'; }
+    catch (e) { if (e && e.code === 'declined') return 'Download cancelled.'; throw new Error('The download didn’t go through. Try again.'); }
+  }
+
+  async function exportGif(m, L, bg, transparent, status) {
+    const { GIFEncoder, quantize, applyPalette } = await import('https://unpkg.com/gifenc@1.0.3/dist/gifenc.esm.js');
+    const c = document.createElement('canvas'); c.width = L.W; c.height = L.H;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    const gif = GIFEncoder();
+    // round where each frame ends, not each frame's length, so the loop keeps its tempo
+    const secs = stepSecs(m), list = playlist(m);
+    let prevEnd = 0;
+    for (let i = 0; i < list.length; i++) {
+      drawExportFrame(x, L, list[i].pose, transparent ? null : bg);
+      const { data } = x.getImageData(0, 0, L.W, L.H);
+      const end = Math.round((i + 1) * secs * 100) * 10, delay = Math.max(20, end - prevEnd); prevEnd = end;
+      if (transparent) {
+        const palette = quantize(data, 256, { format: 'rgba4444', oneBitAlpha: true });
+        const index = applyPalette(data, palette, 'rgba4444');
+        const ti = palette.findIndex(col => col[3] === 0);
+        gif.writeFrame(index, L.W, L.H, { palette, delay, transparent: ti >= 0, transparentIndex: Math.max(0, ti), dispose: 2 });
+      } else {
+        const palette = quantize(data, 256);
+        gif.writeFrame(index_(applyPalette, data, palette), L.W, L.H, { palette, delay });
+      }
+      status(`Making GIF… frame ${i + 1} of ${list.length}`);
+      await new Promise(r => setTimeout(r));
+    }
+    gif.finish();
+    return new Blob([gif.bytes()], { type: 'image/gif' });
+  }
+  const index_ = (applyPalette, data, palette) => applyPalette(data, palette);
+
+  async function exportMp4(m, L, bg, loops, status) {
+    if (!('VideoEncoder' in window)) throw new Error('MP4 export needs a newer browser (recent Chrome, Edge or Safari). GIF works everywhere.');
+    if (!window.Mp4Muxer) await loadScript('https://unpkg.com/mp4-muxer@5.1.3/build/mp4-muxer.js');
+    const fps = Math.min(60, Math.max(1, Math.round(1 / stepSecs(m))));
+    let config = null;
+    for (const codec of ['avc1.640028', 'avc1.4d0028', 'avc1.42001f']) {
+      const cfg = { codec, width: L.W, height: L.H, bitrate: 6e6, framerate: fps };
+      try { if ((await VideoEncoder.isConfigSupported(cfg)).supported) { config = cfg; break; } } catch { /* try the next */ }
+    }
+    if (!config) throw new Error('This browser can’t make MP4 at this size. Try a smaller size, or GIF.');
+    const muxer = new Mp4Muxer.Muxer({ target: new Mp4Muxer.ArrayBufferTarget(), video: { codec: 'avc', width: L.W, height: L.H }, fastStart: 'in-memory' });
+    let failed = null;
+    const enc = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: e => { failed = e; } });
+    enc.configure(config);
+    const c = document.createElement('canvas'); c.width = L.W; c.height = L.H;
+    const x = c.getContext('2d');
+    const list = playlist(m), us = stepSecs(m) * 1e6, total = list.length * loops;
+    let lastKey = -Infinity;
+    for (let i = 0; i < total; i++) {
+      if (failed) throw new Error('The video encoder stopped. Try GIF, or a smaller size.');
+      drawExportFrame(x, L, list[i % list.length].pose, bg);
+      const t = Math.round(i * us), next = Math.round((i + 1) * us);
+      const vf = new VideoFrame(c, { timestamp: t, duration: next - t });
+      const key = t - lastKey >= 2e6;
+      if (key) lastKey = t;
+      enc.encode(vf, { keyFrame: key });
+      vf.close();
+      while (enc.encodeQueueSize > 8) await new Promise(r => setTimeout(r, 5));
+      if (i % 10 === 0) { status(`Making MP4… ${Math.round(i / total * 100)}%`); await new Promise(r => setTimeout(r)); }
+    }
+    await enc.flush();
+    muxer.finalize();
+    return new Blob([muxer.target.buffer], { type: 'video/mp4' });
+  }
+
+  function renderExportUI() {
+    const mp4 = $('exFormat').value === 'mp4';
+    $('exTransWrap').hidden = mp4;
+    $('exLoopsWrap').hidden = !mp4;
+    $('exBg').disabled = !mp4 && $('exTrans').checked;
+  }
+  $('exportBtn').addEventListener('click', () => {
+    if (S.playing) stopPlay();
+    $('exportPanel').hidden = !$('exportPanel').hidden; $('exStatus').textContent = ''; renderExportUI();
+  });
+  $('exClose').addEventListener('click', () => { $('exportPanel').hidden = true; });
+  $('exFormat').addEventListener('change', renderExportUI);
+  $('exTrans').addEventListener('change', renderExportUI);
+  $('exGo').addEventListener('click', async () => {
+    const m = curMove(), st = t => { $('exStatus').textContent = t; };
+    if (!m || !m.frames.length) { st('This movement has no frames yet.'); return; }
+    if (S.playing) stopPlay();
+    const mp4 = $('exFormat').value === 'mp4';
+    const L = exportLayout(m, +$('exSize').value, mp4);
+    const keep = capturePose(), btn = $('exGo');
+    btn.disabled = true;
+    try {
+      const blob = mp4
+        ? await exportMp4(m, L, $('exBg').value, Math.max(1, Math.min(50, +$('exLoops').value || 1)), st)
+        : await exportGif(m, L, $('exBg').value, $('exTrans').checked, st);
+      applyPose(keep); render();
+      st(`Ready (${(blob.size / 1048576).toFixed(1)} MB). Confirm the download…`);
+      st(await offerFile(fileName(mp4 ? 'mp4' : 'gif'), blob));
+    } catch (e) {
+      applyPose(keep); render();
+      st(e && e.message ? e.message : 'Export didn’t work. Try again.');
+    } finally { btn.disabled = false; }
+  });
+
+  fit();
+  restore();
+})();
+</script>
+</body>
+</html>
